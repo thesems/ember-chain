@@ -4,7 +4,6 @@ use crate::{
     pow_utils::{compare_difficulty, target_from_difficulty_bit},
     transaction::Transaction,
 };
-use ethnum::u256;
 use rand::prelude::*;
 use std::{
     collections::{HashMap, VecDeque},
@@ -20,7 +19,7 @@ const TEST_MINING_PROBABILITY: f32 = 1.0;
 pub struct Blockchain {
     block_uids: HashMap<String, usize>,
     blocks: Vec<Block>,
-    target: ethnum::U256,
+    target: u64,
     hash_per_secs: f64,
     last_mining_times: VecDeque<f64>,
     pending_transactions: Vec<Transaction>,
@@ -65,7 +64,6 @@ impl Blockchain {
         let mut block_header = BlockHeader::from(previous_block_hash, 0);
         block_header.merkle_root = [0u8; 32];
         block_header.nonce = 10;
-
         block_header
     }
     fn mine(&mut self) -> Option<BlockHeader> {
@@ -85,7 +83,7 @@ impl Blockchain {
         return Some(block);
     }
     fn add_mining_time(&mut self, duration: Duration, nonce: u32) {
-        if self.last_mining_times.len() < BLOCK_ADJUSTMENT_FREQUENCY {
+        if self.last_mining_times.len() >= BLOCK_ADJUSTMENT_FREQUENCY {
             self.last_mining_times.pop_front();
         }
         self.last_mining_times.push_back(duration.as_secs_f64());
@@ -95,7 +93,7 @@ impl Blockchain {
         let mut block_hash = block.finalize();
 
         for i in 0..u32::MAX {
-            let hash_int: u256 = ethnum::U256::from_be_bytes(block_hash);
+            let hash_int: u64 = u64::from_be_bytes(block_hash[..8].try_into().unwrap());
             if compare_difficulty(self.target, hash_int) {
                 println!("Succesfully mined a block!");
                 return true;
@@ -114,33 +112,27 @@ impl Blockchain {
         let avg_mining_time = self.get_average_mining_time();
         let previous_difficulty = self.target;
 
-        if avg_mining_time < BLOCK_TIME_SECS as f64 * 0.8
-            || avg_mining_time > BLOCK_TIME_SECS as f64 * 1.2
+        if avg_mining_time < BLOCK_TIME_SECS as f64 * 0.9
+            || avg_mining_time > BLOCK_TIME_SECS as f64 * 1.1
         {
             let total_time: f64 = self.last_mining_times.iter().sum();
-            let modifier =
-                (BLOCK_ADJUSTMENT_FREQUENCY * BLOCK_TIME_SECS as usize) as f64 / total_time;
+            let mut modifier =
+                total_time / (BLOCK_ADJUSTMENT_FREQUENCY * BLOCK_TIME_SECS as usize) as f64;
 
-            if modifier > 1.0 {
-                self.target = self.target.saturating_sub(
-                    self.target
-                        .saturating_mul(ethnum::U256::from(modifier as u64))
-                        .saturating_sub(self.target),
-                );
-                println!(
-                    "Reduce difficulty target by {}x from {} to {}.",
-                    modifier, previous_difficulty, self.target
-                );
+            println!("total time: {}", total_time);
+            dbg!(&self.last_mining_times);
+
+            if modifier < 1.0 {
+                modifier = modifier.max(0.75);
             } else {
-                self.target += self.target.saturating_sub(
-                    self.target
-                        .saturating_mul(ethnum::U256::from(modifier as u64)),
-                );
-                println!(
-                    "Increase difficulty target by {}x from {} to {}.",
-                    modifier, previous_difficulty, self.target
-                );
+                modifier = modifier.min(1.25);
             }
+
+            self.target = (self.target as f64 * modifier) as u64;
+            println!(
+                "Adjust difficulty target by from {} to {}.",
+                previous_difficulty, self.target
+            );
         }
         println!(
             "Average block time during last {} blocks was {} seconds.",
