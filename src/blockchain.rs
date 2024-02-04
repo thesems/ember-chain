@@ -4,6 +4,7 @@ use crate::{
     pow_utils::{compare_difficulty, target_from_difficulty_bit},
     transaction::Transaction,
 };
+use blockchain_utxo::Hash;
 use rand::prelude::*;
 use std::{
     collections::{HashMap, VecDeque},
@@ -17,7 +18,7 @@ const START_DIFFICULTY_BIT: u32 = 16;
 const TEST_MINING_PROBABILITY: f32 = 1.0;
 
 pub struct Blockchain {
-    block_uids: HashMap<String, usize>,
+    block_uids: HashMap<Hash, usize>,
     blocks: Vec<Block>,
     target: u64,
     hash_per_secs: f64,
@@ -38,17 +39,18 @@ impl Blockchain {
     pub fn run(&mut self) {
         println!("Blockchain started.");
         loop {
-            let block_header = self.mine_or_receive();
             let transactions = vec![];
+            let block_header = self.mine_or_receive(merkle_root);
             let block = self.build_block(block_header, transactions);
             self.add_block(block);
             self.adjust_difficulty();
         }
     }
-    fn mine_or_receive(&mut self) -> BlockHeader {
+    fn mine_or_receive(&mut self, merkle_root: &Hash) -> BlockHeader {
         let mut rng = rand::thread_rng();
         if rng.gen::<f32>() < TEST_MINING_PROBABILITY {
-            if let Some(block_header) = self.mine() {
+            if let Some((block_hash, block_header)) = self.mine(merkle_root) {
+                self.block_uids.insert(block_hash, self.blocks.len());
                 return block_header;
             }
         }
@@ -66,21 +68,19 @@ impl Blockchain {
         block_header.nonce = 10;
         block_header
     }
-    fn mine(&mut self) -> Option<BlockHeader> {
+    fn mine(&mut self, merkle_root: &Hash) -> Option<(Hash, BlockHeader)> {
         let start = Instant::now();
-
         let mut previous_block_hash = [0u8; 32];
         if let Some(previous_block) = self.previous_block() {
             previous_block_hash = previous_block.header.merkle_root;
         }
-        let mut block = BlockHeader::from(previous_block_hash, 0);
-        let mined = self.proof_of_work(&mut block);
-        if !mined {
-            return None;
+        let mut block_header = BlockHeader::from(previous_block_hash, 0);
+        block_header.merkle_root = merkle_root.clone();
+        if let Some(block_hash) = self.proof_of_work(&mut block_header) {
+            self.add_mining_time(start.elapsed(), block_header.nonce);
+            return Some((block_hash, block_header));
         }
-
-        self.add_mining_time(start.elapsed(), block.nonce);
-        return Some(block);
+        return None;
     }
     fn add_mining_time(&mut self, duration: Duration, nonce: u32) {
         if self.last_mining_times.len() >= BLOCK_ADJUSTMENT_FREQUENCY {
@@ -89,20 +89,20 @@ impl Blockchain {
         self.last_mining_times.push_back(duration.as_secs_f64());
         self.hash_per_secs = nonce as f64 / duration.as_millis() as f64;
     }
-    fn proof_of_work(&self, block: &mut BlockHeader) -> bool {
+    fn proof_of_work(&self, block: &mut BlockHeader) -> Option<Hash> {
         let mut block_hash = block.finalize();
 
         for i in 0..u32::MAX {
             let hash_int: u64 = u64::from_be_bytes(block_hash[..8].try_into().unwrap());
             if compare_difficulty(self.target, hash_int) {
                 println!("Succesfully mined a block!");
-                return true;
+                return Some(block_hash);
             }
 
             block.nonce = i;
             block_hash = block.finalize();
         }
-        false
+        None 
     }
     pub fn adjust_difficulty(&mut self) {
         if self.blocks.len() % BLOCK_ADJUSTMENT_FREQUENCY != 0 {
@@ -123,9 +123,9 @@ impl Blockchain {
             dbg!(&self.last_mining_times);
 
             if modifier < 1.0 {
-                modifier = modifier.max(0.75);
+                modifier = modifier.max(0.9);
             } else {
-                modifier = modifier.min(1.25);
+                modifier = modifier.min(1.1);
             }
 
             self.target = (self.target as f64 * modifier) as u64;

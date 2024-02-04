@@ -1,3 +1,7 @@
+use std::hash::{Hash, Hasher};
+
+use blockchain_utxo::Address;
+
 struct Input {
     count: u8, // must be >= 1
     previous_output_txid: [u8; 32],
@@ -28,7 +32,8 @@ struct Output {
     count: u8,
     amount: u64,
     length: u8,
-    script: [u8; 36],
+    // script: [u8; 36],
+    to_address: Address,
 }
 impl Output {
     fn serialize(&self) -> [u8; 46] {
@@ -39,8 +44,11 @@ impl Output {
             data[i] = amount[i];
         }
         data[9] = self.length;
-        for i in 10..46 {
-            data[i] = self.script[i];
+        // for i in 10..46 {
+        //     data[i] = self.script[i];
+        // }
+        for (i, b) in self.to_address.as_bytes().iter().enumerate() {
+            data[10+i] = *b;
         }
         data
     }
@@ -74,5 +82,10 @@ impl Transaction {
     }
     pub fn size(&self) -> usize {
         194        
+    }
+}
+impl Hash for Transaction {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.marker.hash(state);
     }
 }
