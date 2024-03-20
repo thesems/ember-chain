@@ -1,5 +1,6 @@
-use crate::HashResult;
 use sha2::{Digest, Sha256};
+
+use crate::hash_utils::HashResult;
 
 pub struct BlockHeader {
     pub version: u32,

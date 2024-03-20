@@ -1,4 +1,4 @@
-use crate::{block::Block, block_header::BlockHeader, pow_utils::proof_of_work, HashResult};
+use crate::{block::Block, block_header::BlockHeader, hash_utils::HashResult, pow_utils::proof_of_work};
 use chrono::{NaiveDate, NaiveDateTime};
 use rand::prelude::*;
 use std::{

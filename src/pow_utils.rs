@@ -1,6 +1,6 @@
 use ethnum::U256;
 
-use crate::{block_header::BlockHeader, HashResult};
+use crate::{block_header::BlockHeader, hash_utils::HashResult};
 
 pub fn target_from_difficulty_bit(bit: u8) -> U256 {
     U256::new(2).checked_pow(256 - bit as u32).unwrap()

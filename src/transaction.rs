@@ -1,7 +1,8 @@
 use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
 
-use crate::Address;
+use crate::hash_utils::Address;
+
 
 pub struct Transaction {
     inputs: Vec<u32>,
