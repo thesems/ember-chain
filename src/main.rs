@@ -1,7 +1,13 @@
 use blockchain_utxo::blockchain::Blockchain;
+use dotenv::dotenv;
 
 fn main() {
-    let mut blockchain = Blockchain::new();
+    dotenv().ok();
+    env_logger::init();
+
+    let app_name = "blockchain-utxo";
+    log::info!("Application '{}' started.", app_name);
+
+    let mut blockchain = Blockchain::default();
     blockchain.run();
 }
-

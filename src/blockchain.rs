@@ -19,8 +19,9 @@ pub struct Blockchain {
     hash_per_secs: f64,
     last_mining_times: VecDeque<f64>,
 }
-impl Blockchain {
-    pub fn new() -> Self {
+
+impl Default for Blockchain {
+    fn default() -> Self {
         Self {
             block_uids: HashMap::new(),
             blocks: vec![],
@@ -29,6 +30,9 @@ impl Blockchain {
             last_mining_times: VecDeque::with_capacity(BLOCK_ADJUSTMENT_FREQUENCY),
         }
     }
+}
+
+impl Blockchain {
     fn add_genesis_block(&mut self) {
         let date_time: NaiveDateTime = NaiveDate::from_ymd_opt(2017, 11, 12)
             .unwrap()
@@ -38,10 +42,9 @@ impl Blockchain {
             header: BlockHeader::from([0u8; 32], [0u8; 32], 0, date_time.timestamp() as u64),
             transactions: vec![],
         });
-        println!("Genesis block added.");
+        log::info!("Genesis block added.");
     }
     pub fn run(&mut self) {
-        println!("Blockchain started.");
         self.add_genesis_block();
         loop {
             let transactions = vec![];
@@ -54,8 +57,8 @@ impl Blockchain {
     }
     fn add_block(&mut self, block: Block) {
         self.blocks.push(block);
-        println!("Added a new block.");
-        println!("Average hash per second: {:.2}", self.hash_per_secs);
+        log::info!("Added a new block.");
+        log::debug!("Average hash per second: {:.2}", self.hash_per_secs);
     }
     fn head(&self) -> Option<&Block> {
         self.blocks.last()
@@ -64,6 +67,7 @@ impl Blockchain {
         let mut rng = rand::thread_rng();
         if rng.gen::<f32>() < TEST_MINING_PROBABILITY {
             if let Some((block_hash, block_header)) = self.mine(merkle_root) {
+                log::info!("Succesfully mined a block!");
                 self.block_uids.insert(block_hash, self.blocks.len());
                 return block_header;
             }
@@ -71,7 +75,7 @@ impl Blockchain {
 
         // generate block manually
         thread::sleep(Duration::new(BLOCK_TIME_SECS, 0));
-        println!("A participant has mined a block before you!");
+        log::info!("A participant has mined a block before you!");
 
         let mut previous_block_hash = [0u8; 32];
         if let Some(previous_block) = self.head() {
@@ -120,13 +124,13 @@ impl Blockchain {
         }
 
         if previous_difficulty != self.difficulty {
-            println!(
+            log::info!(
                 "Adjust difficulty from {} to {}.",
                 previous_difficulty, self.difficulty
             );
         }
 
-        println!(
+        log::info!(
             "Average block time during last {} blocks was {} seconds.",
             BLOCK_ADJUSTMENT_FREQUENCY, avg_mining_time
         );

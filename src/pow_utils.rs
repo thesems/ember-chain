@@ -20,7 +20,6 @@ pub fn proof_of_work(difficulty: u8, block: &mut BlockHeader) -> Option<HashResu
     for i in 0..u32::MAX {
         let hash_int = U256::from_be_bytes(block_hash);
         if compare_difficulty(target, hash_int) {
-            println!("Succesfully mined a block!");
             return Some(block_hash);
         }
 
