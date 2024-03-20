@@ -1,4 +1,4 @@
-# Ember-chain
+# Ember-chain :fire::chains:
 
 ## What is it?
 Ember-chain is a blockchain inspired by bitcoin. It is implemented in rust and serves primarily as my study project.
