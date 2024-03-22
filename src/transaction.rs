@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::hash_utils::Address;
 
-
+#[derive(Clone)]
 pub struct Transaction {
     inputs: Vec<u32>,
     outputs: HashMap<Address, u32>,

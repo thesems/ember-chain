@@ -1,3 +1,4 @@
+use crossbeam::channel::{Receiver, TryRecvError};
 use ethnum::U256;
 
 use crate::{block_header::BlockHeader, hash_utils::HashResult};
@@ -13,7 +14,12 @@ pub fn compare_difficulty(target: U256, hash_int: U256) -> bool {
     false
 }
 
-pub fn proof_of_work(difficulty: u8, block: &mut BlockHeader) -> Option<HashResult> {
+pub fn proof_of_work(
+    difficulty: u8,
+    block: &mut BlockHeader,
+    cancel_mine_rx: Receiver<()>,
+    hash_count: &mut u64,
+) -> Option<HashResult> {
     let mut block_hash = block.finalize();
     let target = target_from_difficulty_bit(difficulty);
 
@@ -25,6 +31,14 @@ pub fn proof_of_work(difficulty: u8, block: &mut BlockHeader) -> Option<HashResu
 
         block.nonce = i;
         block_hash = block.finalize();
+        *hash_count += 1;
+
+        if i % 10000 == 0 {
+            match cancel_mine_rx.try_recv() {
+                Ok(_) | Err(TryRecvError::Disconnected) => return None,
+                Err(TryRecvError::Empty) => {}
+            }
+        }
     }
     None
 }
