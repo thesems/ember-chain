@@ -1,13 +1,10 @@
 use crate::{
-    block::Block, block_header::BlockHeader, hash_utils::HashResult,
-    merkle_tree::generate_merkle_root, pow_utils::proof_of_work, transaction::Transaction,
+    block::Block, block_header::BlockHeader, hash_utils::HashResult, merkle_tree::generate_merkle_root, pow_utils::proof_of_work, server::Server, transaction::Transaction
 };
-use crossbeam::channel::{select, unbounded, Receiver, Sender};
+use crossbeam::channel::{select, unbounded, Receiver};
 use rand::prelude::*;
 use std::{
-    collections::{HashMap, VecDeque},
-    thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    collections::{HashMap, VecDeque}, sync::{Arc, Mutex}, thread, time::{Duration, Instant, SystemTime, UNIX_EPOCH}
 };
 
 const BLOCK_TIME_SECS: u64 = 10;
@@ -21,18 +18,25 @@ pub struct Blockchain {
     difficulty: u8,
     hash_per_secs: f64,
     last_mining_times: VecDeque<f64>,
-    pending_transactions: Vec<Transaction>,
+    pending_transactions: Arc<Mutex<Vec<Transaction>>>,
+    running: bool,
+    server: Arc<Server>,
+    tx_recv: Receiver<Transaction>,
 }
 
 impl Default for Blockchain {
     fn default() -> Self {
+        let (tx_sender, tx_recv) = unbounded::<Transaction>();
         Self {
             block_uids: HashMap::new(),
             blocks: vec![],
             difficulty: START_DIFFICULTY_BIT,
             hash_per_secs: 0.0,
             last_mining_times: VecDeque::with_capacity(BLOCK_ADJUSTMENT_FREQUENCY),
-            pending_transactions: vec![],
+            pending_transactions: Arc::new(Mutex::new(vec![])),
+            running: true,
+            server: Arc::new(Server::new(tx_sender)),
+            tx_recv 
         }
     }
 }
@@ -40,13 +44,19 @@ impl Default for Blockchain {
 impl Blockchain {
     pub fn run(&mut self) {
         self.add_genesis_block();
-        loop {
-            let tx_hashes = vec![];
-            let merkle_root = generate_merkle_root(tx_hashes);
-            let block = self.mine_or_receive(merkle_root);
+
+        let server = self.server.clone();
+        let server_handle = thread::spawn(move || {
+            server.listen();
+        });
+
+        while self.running {
+            let block = self.mine_or_receive();
             self.add_block(block);
             self.adjust_difficulty();
         }
+
+        server_handle.join().unwrap();
     }
     fn add_genesis_block(&mut self) {
         let time = SystemTime::now()
@@ -95,8 +105,11 @@ impl Blockchain {
         Block::build(block_header, vec![], [0u8; 32])
     }
 
-    fn mine_or_receive(&mut self, merkle_root: HashResult) -> Block {
-        let txs = self.pending_transactions.clone();
+    fn mine_or_receive(&mut self) -> Block {
+        let txs = self.pending_transactions.lock().unwrap().clone();
+        let tx_hashes = txs.iter().map(|x| x.hash()).collect();
+
+        let merkle_root = generate_merkle_root(tx_hashes);
         let mut final_block = Block::build(
             BlockHeader::from([0u8; 32], [0u8; 32], 0, 0),
             vec![],
@@ -111,15 +124,23 @@ impl Blockchain {
         thread::scope(|s| {
             let (cancel_mine_tx, cancel_mine_rx) = unbounded::<()>();
             s.spawn(|| {
-                if let Some(block) = self.mine(merkle_root, txs, cancel_mine_rx, &mut hash_count) {
+                if let Some(block) = self.mine(merkle_root, &txs, cancel_mine_rx, &mut hash_count) {
                     mine_sender.send(block).unwrap();
                 }
             });
             s.spawn(|| {
-                println!("pre: {}", self.block_height());
                 let block = self.recv_block();
                 net_sender.send(block).unwrap();
-                println!("post: {}", self.block_height());
+            });
+            s.spawn(|| {
+                loop {
+                    match self.tx_recv.recv() {
+                        Ok(tx) => {
+                            self.pending_transactions.lock().unwrap().push(tx);
+                        },
+                        Err(_e) => {todo!()},
+                    }
+                }
             });
             final_block = select! {
                 recv(mine_recv) -> my_block => {
@@ -132,7 +153,6 @@ impl Blockchain {
                     other_block.unwrap()
                 }
             };
-            println!("post sele: {}", self.block_height());
         });
 
         self.block_uids.insert(final_block.hash, self.blocks.len());
@@ -142,7 +162,7 @@ impl Blockchain {
     fn mine(
         &self,
         merkle_root: HashResult,
-        transactions: Vec<Transaction>,
+        transactions: &[Transaction],
         cancel_mine_rx: Receiver<()>,
         hash_count: &mut u64,
     ) -> Option<Block> {
@@ -158,7 +178,7 @@ impl Blockchain {
             BlockHeader::from(merkle_root, previous_block_hash, self.difficulty, timestamp);
         if let Some(block_hash) = proof_of_work(self.difficulty, &mut block_header, cancel_mine_rx, hash_count)
         {
-            let block = Block::build(block_header, transactions, block_hash);
+            let block = Block::build(block_header, transactions.to_vec(), block_hash);
             return Some(block);
         }
         None

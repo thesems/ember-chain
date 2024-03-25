@@ -1,7 +1,6 @@
-use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
 
-use crate::hash_utils::Address;
+use crate::hash_utils::{sha256, Address, HashResult};
 
 #[derive(Clone)]
 pub struct Transaction {
@@ -10,19 +9,31 @@ pub struct Transaction {
 }
 impl Transaction {
     pub fn from(inputs: Vec<u32>, outputs: HashMap<Address, u32>) -> Self {
-        Self {
-            inputs,
-            outputs,
-        }
+        Self { inputs, outputs }
     }
-}
-impl Hash for Transaction {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        for input in self.inputs.iter() {
-            input.hash(state);
-        }
-        for output in self.outputs.iter() {
-            output.hash(state);
-        }
+    pub fn hash(&self) -> HashResult {
+        let mut input_bytes: Vec<u8> = self
+            .inputs
+            .iter()
+            .flat_map(|x| x.to_be_bytes())
+            .collect();
+
+        self
+            .outputs
+            .iter()
+            .for_each(|x| {
+                let int_string: Vec<u32> = x.0.chars().map(|ch| ch as u32).collect();
+                let mut outputs: Vec<u8> = int_string
+                    .iter()
+                    .flat_map(|x| x.to_be_bytes())
+                    .collect();
+
+                for y in x.1.to_be_bytes() {
+                    outputs.push(y);
+                }
+                input_bytes.append(&mut outputs);
+            });
+        
+        sha256(&input_bytes)
     }
 }
