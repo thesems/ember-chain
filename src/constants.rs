@@ -1,0 +1,4 @@
+pub const BLOCK_TIME_SECS: u64 = 10;
+pub const BLOCK_ADJUSTMENT_FREQUENCY: usize = 100;
+pub const START_DIFFICULTY_BIT: u8 = 20;
+pub const TEST_MINING_PROBABILITY: f32 = 1.0;

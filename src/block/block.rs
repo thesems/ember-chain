@@ -1,4 +1,6 @@
-use crate::{block_header::BlockHeader, hash_utils::HashResult, transaction::Transaction};
+use crate::hash_utils::HashResult;
+
+use super::{BlockHeader, Transaction};
 
 pub struct Block {
     pub header: BlockHeader,

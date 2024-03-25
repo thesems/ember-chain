@@ -1,27 +1,28 @@
 use crate::{
-    block::Block, block_header::BlockHeader, hash_utils::HashResult, merkle_tree::generate_merkle_root, pow_utils::proof_of_work, server::Server, transaction::Transaction
+    block::{block_header::BlockHeader, transaction::Transaction, Block},
+    constants::{BLOCK_ADJUSTMENT_FREQUENCY, BLOCK_TIME_SECS, START_DIFFICULTY_BIT},
+    hash_utils::HashResult,
+    merkle_tree::generate_merkle_root,
+    mining::miner::Miner,
+    server::Server,
 };
 use crossbeam::channel::{select, unbounded, Receiver};
 use rand::prelude::*;
 use std::{
-    collections::{HashMap, VecDeque}, sync::{Arc, Mutex}, thread, time::{Duration, Instant, SystemTime, UNIX_EPOCH}
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-
-const BLOCK_TIME_SECS: u64 = 10;
-const BLOCK_ADJUSTMENT_FREQUENCY: usize = 100;
-const START_DIFFICULTY_BIT: u8 = 20;
-
 
 pub struct Blockchain {
     block_uids: HashMap<HashResult, usize>,
     blocks: Vec<Block>,
-    difficulty: u8,
-    hash_per_secs: f64,
-    last_mining_times: VecDeque<f64>,
     pending_transactions: Arc<Mutex<Vec<Transaction>>>,
     running: bool,
     server: Arc<Server>,
     tx_recv: Receiver<Transaction>,
+    miner: Miner,
 }
 
 impl Default for Blockchain {
@@ -30,13 +31,11 @@ impl Default for Blockchain {
         Self {
             block_uids: HashMap::new(),
             blocks: vec![],
-            difficulty: START_DIFFICULTY_BIT,
-            hash_per_secs: 0.0,
-            last_mining_times: VecDeque::with_capacity(BLOCK_ADJUSTMENT_FREQUENCY),
             pending_transactions: Arc::new(Mutex::new(vec![])),
             running: true,
             server: Arc::new(Server::new(tx_sender)),
-            tx_recv 
+            tx_recv,
+            miner: Miner::new(START_DIFFICULTY_BIT),
         }
     }
 }
@@ -53,7 +52,9 @@ impl Blockchain {
         while self.running {
             let block = self.mine_or_receive();
             self.add_block(block);
-            self.adjust_difficulty();
+            if self.blocks.len() % BLOCK_ADJUSTMENT_FREQUENCY == 0 {
+                self.miner.adjust_difficulty();
+            }
         }
 
         server_handle.join().unwrap();
@@ -73,7 +74,6 @@ impl Blockchain {
     fn add_block(&mut self, block: Block) {
         self.blocks.push(block);
         log::info!("Added a new block with height {}.", self.block_height());
-        log::debug!("Average hash per second: {:.2}", self.hash_per_secs);
     }
     fn head(&self) -> Option<&Block> {
         self.blocks.last()
@@ -81,7 +81,6 @@ impl Blockchain {
     fn block_height(&self) -> usize {
         self.blocks.len()
     }
-
     fn recv_block(&self) -> Block {
         let mut rng = rand::thread_rng();
         let wait_time = rng.gen::<f32>().max(0.8);
@@ -104,7 +103,6 @@ impl Blockchain {
         block_header.nonce = 0;
         Block::build(block_header, vec![], [0u8; 32])
     }
-
     fn mine_or_receive(&mut self) -> Block {
         let txs = self.pending_transactions.lock().unwrap().clone();
         let tx_hashes = txs.iter().map(|x| x.hash()).collect();
@@ -124,7 +122,13 @@ impl Blockchain {
         thread::scope(|s| {
             let (cancel_mine_tx, cancel_mine_rx) = unbounded::<()>();
             s.spawn(|| {
-                if let Some(block) = self.mine(merkle_root, &txs, cancel_mine_rx, &mut hash_count) {
+                if let Some(block) = self.miner.mine(
+                    merkle_root,
+                    &txs,
+                    cancel_mine_rx,
+                    &mut hash_count,
+                    self.head().unwrap().hash,
+                ) {
                     mine_sender.send(block).unwrap();
                 }
             });
@@ -132,13 +136,13 @@ impl Blockchain {
                 let block = self.recv_block();
                 net_sender.send(block).unwrap();
             });
-            s.spawn(|| {
-                loop {
-                    match self.tx_recv.recv() {
-                        Ok(tx) => {
-                            self.pending_transactions.lock().unwrap().push(tx);
-                        },
-                        Err(_e) => {todo!()},
+            s.spawn(|| loop {
+                match self.tx_recv.recv() {
+                    Ok(tx) => {
+                        self.pending_transactions.lock().unwrap().push(tx);
+                    }
+                    Err(_e) => {
+                        todo!()
                     }
                 }
             });
@@ -156,67 +160,7 @@ impl Blockchain {
         });
 
         self.block_uids.insert(final_block.hash, self.blocks.len());
-        self.add_mining_time(start.elapsed(), hash_count);
+        self.miner.add_mining_time(start.elapsed(), hash_count);
         final_block
-    }
-    fn mine(
-        &self,
-        merkle_root: HashResult,
-        transactions: &[Transaction],
-        cancel_mine_rx: Receiver<()>,
-        hash_count: &mut u64,
-    ) -> Option<Block> {
-        let previous_block_hash = match self.head() {
-            Some(previous_block) => previous_block.hash,
-            None => [0u8; 32],
-        };
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let mut block_header =
-            BlockHeader::from(merkle_root, previous_block_hash, self.difficulty, timestamp);
-        if let Some(block_hash) = proof_of_work(self.difficulty, &mut block_header, cancel_mine_rx, hash_count)
-        {
-            let block = Block::build(block_header, transactions.to_vec(), block_hash);
-            return Some(block);
-        }
-        None
-    }
-    pub fn adjust_difficulty(&mut self) {
-        if self.blocks.len() % BLOCK_ADJUSTMENT_FREQUENCY != 0 {
-            return;
-        }
-
-        let avg_mining_time =
-            self.last_mining_times.iter().sum::<f64>() / self.last_mining_times.len() as f64;
-        let previous_difficulty = self.difficulty;
-
-        if avg_mining_time < BLOCK_TIME_SECS as f64 * 0.8 {
-            self.difficulty += 1;
-        } else if avg_mining_time > BLOCK_TIME_SECS as f64 * 1.2 {
-            self.difficulty -= 1;
-        }
-
-        if previous_difficulty != self.difficulty {
-            log::info!(
-                "Adjust difficulty from {} to {}.",
-                previous_difficulty,
-                self.difficulty
-            );
-        }
-
-        log::info!(
-            "Average block time during last {} blocks was {} seconds.",
-            BLOCK_ADJUSTMENT_FREQUENCY,
-            avg_mining_time
-        );
-    }
-    fn add_mining_time(&mut self, duration: Duration, counter: u64) {
-        if self.last_mining_times.len() >= BLOCK_ADJUSTMENT_FREQUENCY {
-            self.last_mining_times.pop_front();
-        }
-        self.last_mining_times.push_back(duration.as_secs_f64());
-        self.hash_per_secs = (counter as f64 / duration.as_millis() as f64) * 1000.0;
     }
 }

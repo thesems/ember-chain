@@ -1,4 +1,4 @@
-use crate::transaction::Transaction;
+use crate::block::transaction::Transaction;
 use crossbeam::channel::Sender;
 use serde::{Deserialize, Serialize};
 use std::{
