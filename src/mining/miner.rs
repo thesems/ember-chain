@@ -47,7 +47,7 @@ impl Miner {
             cancel_mine_rx,
             hash_count,
         ) {
-            let block = Block::build(block_header, transactions.to_vec(), block_hash);
+            let block = Block::new(block_header, transactions.to_vec(), block_hash);
             return Some(block);
         }
         None

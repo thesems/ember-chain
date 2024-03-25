@@ -101,18 +101,14 @@ impl Blockchain {
 
         block_header.merkle_root = [0u8; 32];
         block_header.nonce = 0;
-        Block::build(block_header, vec![], [0u8; 32])
+        Block::new(block_header, vec![], [0u8; 32])
     }
     fn mine_or_receive(&mut self) -> Block {
         let txs = self.pending_transactions.lock().unwrap().clone();
         let tx_hashes = txs.iter().map(|x| x.hash()).collect();
 
         let merkle_root = generate_merkle_root(tx_hashes);
-        let mut final_block = Block::build(
-            BlockHeader::from([0u8; 32], [0u8; 32], 0, 0),
-            vec![],
-            [0u8; 32],
-        );
+        let mut final_block = Block::default();
 
         let start = Instant::now();
         let mut hash_count = 0;

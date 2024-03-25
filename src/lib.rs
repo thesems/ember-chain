@@ -6,4 +6,5 @@ pub mod hash_utils;
 pub mod server;
 pub mod mining;
 pub mod account;
+pub mod database;
 pub mod constants;
