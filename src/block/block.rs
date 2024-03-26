@@ -1,4 +1,4 @@
-use crate::hash_utils::HashResult;
+use crate::crypto::hash_utils::HashResult;
 
 use super::{BlockHeader, Transaction};
 

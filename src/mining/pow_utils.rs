@@ -1,7 +1,7 @@
 use crossbeam::channel::{Receiver, TryRecvError};
 use ethnum::U256;
 
-use crate::{block::block_header::BlockHeader, hash_utils::HashResult};
+use crate::{block::block_header::BlockHeader, crypto::hash_utils::HashResult};
 
 pub fn target_from_difficulty_bit(bit: u8) -> U256 {
     U256::new(2).checked_pow(256 - bit as u32).unwrap()

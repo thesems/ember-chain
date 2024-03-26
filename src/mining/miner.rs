@@ -8,8 +8,8 @@ use crossbeam::channel::Receiver;
 use crate::{
     block::{Block, BlockHeader, Transaction},
     constants::{BLOCK_ADJUSTMENT_FREQUENCY, BLOCK_TIME_SECS},
-    hash_utils::HashResult,
-    pow_utils::proof_of_work,
+    crypto::hash_utils::HashResult,
+    mining::pow_utils::proof_of_work,
 };
 
 pub struct Miner {

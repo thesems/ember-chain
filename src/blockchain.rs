@@ -2,10 +2,10 @@ use crate::{
     block::{block_header::BlockHeader, transaction::Transaction, Block},
     constants::{BLOCK_ADJUSTMENT_FREQUENCY, BLOCK_TIME_SECS, START_DIFFICULTY_BIT},
     database::{database::Database, InMemoryDatabase},
-    hash_utils::HashResult,
-    merkle_tree::generate_merkle_root,
+    crypto::hash_utils::HashResult,
+    crypto::merkle_tree::generate_merkle_root,
     mining::miner::Miner,
-    server::Server,
+    api::server::Server,
 };
 use crossbeam::channel::{select, unbounded, Receiver};
 use rand::prelude::*;

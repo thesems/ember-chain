@@ -1,10 +1,7 @@
 pub mod blockchain;
 pub mod block;
-pub mod merkle_tree;
-pub mod pow_utils;
-pub mod hash_utils;
-pub mod server;
+pub mod api;
 pub mod mining;
-pub mod account;
 pub mod database;
 pub mod constants;
+pub mod crypto;

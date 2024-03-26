@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::hash_utils::{sha256, Address, HashResult};
+use crate::crypto::hash_utils::{sha256, Address, HashResult};
 
 #[derive(Clone)]
 pub struct Transaction {

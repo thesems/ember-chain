@@ -1,7 +1,7 @@
 // Reference implementation:
 // https://medium.com/coinmonks/merkle-tree-a-simple-explanation-and-implementation-48903442bc08
 
-use crate::hash_utils::{sha256, HashResult};
+use super::hash_utils::{sha256, HashResult};
 
 
 #[derive(PartialEq, Debug, Clone, Copy)]
