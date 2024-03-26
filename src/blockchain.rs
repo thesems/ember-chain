@@ -2,7 +2,6 @@ use crate::{
     api::server::Server, block::{block_header::BlockHeader, transaction::Transaction, Block}, config::models::Config, crypto::{hash_utils::HashResult, merkle_tree::generate_merkle_root}, database::{database::Database, InMemoryDatabase}, mining::miner::Miner
 };
 use crossbeam::channel::{select, unbounded, Receiver};
-use rand::prelude::*;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -80,13 +79,22 @@ impl Blockchain {
             hash: [0u8; 32],
         });
     }
-    fn recv_block(&self) -> Block {
-        let mut rng = rand::thread_rng();
-        let wait_time = rng.gen::<f32>().max(0.8);
-        thread::sleep(Duration::new(
-            (wait_time * self.config.mining.block_time_secs as f32) as u64,
-            0,
-        ));
+    fn recv_block(&self, net_cancel_recv: Receiver<()>) -> Block {
+        let mut sleep_time = 0;
+        loop {
+            match net_cancel_recv.try_recv() {
+                Ok(_) => {
+                    break;
+                },
+                Err(_) => {
+                    sleep_time += 1;
+                    if sleep_time > self.config.mining.block_time_secs {
+                        break;
+                    }
+                    thread::sleep(Duration::from_secs(1));
+                }
+            }
+        }
 
         let mut previous_block_hash = [0u8; 32];
         if let Some(previous_block) = self.database.lock().unwrap().head() {
@@ -117,6 +125,7 @@ impl Blockchain {
 
         let (mine_sender, mine_recv) = unbounded::<Block>();
         let (net_sender, net_recv) = unbounded::<Block>();
+        let (net_cancel_sender, net_cancel_recv) = unbounded::<()>();
 
         thread::scope(|s| {
             let (cancel_mine_tx, cancel_mine_rx) = unbounded::<()>();
@@ -132,18 +141,19 @@ impl Blockchain {
                 }
             });
             s.spawn(|| {
-                let block = self.recv_block();
+                let block = self.recv_block(net_cancel_recv);
                 net_sender.send(block).unwrap();
             });
 
             final_block = select! {
                 recv(mine_recv) -> my_block => {
                    log::info!("★★★ You successfully mined a block! ★★★");
+                    net_cancel_sender.send(()).unwrap();
                    my_block.unwrap()
                 }
                 recv(net_recv) -> other_block => {
                     log::info!("A participant has mined a block!");
-                    let _ = cancel_mine_tx.send(());
+                    cancel_mine_tx.send(()).unwrap();
                     other_block.unwrap()
                 }
             };
