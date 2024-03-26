@@ -1,5 +1,10 @@
 use crate::{
-    api::server::Server, block::{block_header::BlockHeader, transaction::Transaction, Block}, config::models::Config, crypto::{hash_utils::HashResult, merkle_tree::generate_merkle_root}, database::{database::Database, InMemoryDatabase}, mining::miner::Miner
+    api::server::Server,
+    block::{block_header::BlockHeader, transaction::Transaction, Block},
+    config::models::Config,
+    crypto::{hash_utils::HashResult, merkle_tree::generate_merkle_root},
+    database::{database::Database, InMemoryDatabase},
+    mining::miner::Miner,
 };
 use crossbeam::channel::{select, unbounded, Receiver};
 use std::{
@@ -11,26 +16,26 @@ use std::{
 
 pub struct Blockchain {
     config: Config,
-    block_uids: HashMap<HashResult, usize>,
-    database: Arc<Mutex<dyn Database + Send + Sync>>,
-    pending_transactions: Arc<Mutex<Vec<Transaction>>>,
     running: bool,
+    database: Arc<Mutex<dyn Database + Send + Sync>>,
     server: Arc<Server>,
-    tx_recv: Arc<Mutex<Receiver<Transaction>>>,
     miner: Miner,
+    block_uids: HashMap<HashResult, usize>,
+    pending_transactions: Arc<Mutex<Vec<Transaction>>>,
+    transactions_rx: Arc<Mutex<Receiver<Transaction>>>,
 }
 
 impl Blockchain {
     pub fn new(config: Config) -> Self {
-        let (tx_sender, tx_recv) = unbounded::<Transaction>();
+        let (transactions_tx, transactions_rx) = unbounded::<Transaction>();
         Self {
-            block_uids: HashMap::new(),
-            database: Arc::new(Mutex::new(InMemoryDatabase::new())),
-            pending_transactions: Arc::new(Mutex::new(vec![])),
             running: true,
-            server: Arc::new(Server::new(tx_sender)),
-            tx_recv: Arc::new(Mutex::new(tx_recv)),
+            database: Arc::new(Mutex::new(InMemoryDatabase::new())),
+            server: Arc::new(Server::new(transactions_tx)),
             miner: Miner::new(config.mining.clone()),
+            block_uids: HashMap::new(),
+            pending_transactions: Arc::new(Mutex::new(vec![])),
+            transactions_rx: Arc::new(Mutex::new(transactions_rx)),
             config,
         }
     }
@@ -40,7 +45,7 @@ impl Blockchain {
             server.listen();
         });
 
-        let tx_recv = self.tx_recv.clone();
+        let tx_recv = self.transactions_rx.clone();
         let pen_txs = self.pending_transactions.clone();
 
         thread::scope(|s| {
@@ -85,7 +90,7 @@ impl Blockchain {
             match net_cancel_recv.try_recv() {
                 Ok(_) => {
                     break;
-                },
+                }
                 Err(_) => {
                     sleep_time += 1;
                     if sleep_time > self.config.mining.block_time_secs {
@@ -123,37 +128,37 @@ impl Blockchain {
         let mut final_block = Block::default();
         let mut hash_count = 0;
 
-        let (mine_sender, mine_recv) = unbounded::<Block>();
-        let (net_sender, net_recv) = unbounded::<Block>();
-        let (net_cancel_sender, net_cancel_recv) = unbounded::<()>();
+        let (mining_tx, mining_rx) = unbounded::<Block>();
+        let (mining_cancel_tx, mining_cancel_rx) = unbounded::<()>();
+        let (net_tx, net_rx) = unbounded::<Block>();
+        let (net_cancel_tx, net_cancel_rx) = unbounded::<()>();
 
         thread::scope(|s| {
-            let (cancel_mine_tx, cancel_mine_rx) = unbounded::<()>();
             s.spawn(|| {
                 if let Some(block) = self.miner.mine(
                     merkle_root,
                     &txs,
-                    cancel_mine_rx,
+                    mining_cancel_rx,
                     &mut hash_count,
                     prev_block_hash,
                 ) {
-                    mine_sender.send(block).unwrap();
+                    mining_tx.send(block).unwrap();
                 }
             });
             s.spawn(|| {
-                let block = self.recv_block(net_cancel_recv);
-                net_sender.send(block).unwrap();
+                let block = self.recv_block(net_cancel_rx);
+                net_tx.send(block).unwrap();
             });
 
             final_block = select! {
-                recv(mine_recv) -> my_block => {
-                   log::info!("★★★ You successfully mined a block! ★★★");
-                    net_cancel_sender.send(()).unwrap();
-                   my_block.unwrap()
+                recv(mining_rx) -> my_block => {
+                    log::info!("★★★ You successfully mined a block! ★★★");
+                    net_cancel_tx.send(()).unwrap();
+                    my_block.unwrap()
                 }
-                recv(net_recv) -> other_block => {
+                recv(net_rx) -> other_block => {
                     log::info!("A participant has mined a block!");
-                    cancel_mine_tx.send(()).unwrap();
+                    mining_cancel_tx.send(()).unwrap();
                     other_block.unwrap()
                 }
             };
