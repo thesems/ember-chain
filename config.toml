@@ -1,0 +1,5 @@
+[mining]
+block_time_secs = 10
+block_adjustment_frequency = 20
+start_difficulty_bit = 15
+

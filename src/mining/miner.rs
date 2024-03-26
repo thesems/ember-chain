@@ -6,24 +6,23 @@ use std::{
 use crossbeam::channel::Receiver;
 
 use crate::{
-    block::{Block, BlockHeader, Transaction},
-    constants::{BLOCK_ADJUSTMENT_FREQUENCY, BLOCK_TIME_SECS},
-    crypto::hash_utils::HashResult,
-    mining::pow_utils::proof_of_work,
+    block::{Block, BlockHeader, Transaction}, config::models::MiningConfig, crypto::hash_utils::HashResult, mining::pow_utils::proof_of_work
 };
 
 pub struct Miner {
+    config: MiningConfig,
     difficulty: u8,
     hash_per_secs: f64,
     last_mining_times: VecDeque<f64>,
 }
 
 impl Miner {
-    pub fn new(difficulty: u8) -> Self {
+    pub fn new(config: MiningConfig) -> Self {
         Self {
-            difficulty,
+            difficulty: config.start_difficulty_bit,
             hash_per_secs: 0.0,
-            last_mining_times: VecDeque::with_capacity(BLOCK_ADJUSTMENT_FREQUENCY),
+            last_mining_times: VecDeque::with_capacity(config.block_adjustment_frequency),
+            config,
         }
     }
 
@@ -58,9 +57,9 @@ impl Miner {
             self.last_mining_times.iter().sum::<f64>() / self.last_mining_times.len() as f64;
         let previous_difficulty = self.difficulty;
 
-        if avg_mining_time < BLOCK_TIME_SECS as f64 * 0.8 {
+        if avg_mining_time < self.config.block_time_secs as f64 * 0.8 {
             self.difficulty += 1;
-        } else if avg_mining_time > BLOCK_TIME_SECS as f64 * 1.2 {
+        } else if avg_mining_time > self.config.block_time_secs as f64 * 1.2 {
             self.difficulty -= 1;
         }
 
@@ -74,13 +73,13 @@ impl Miner {
 
         log::info!(
             "Average block time during last {} blocks was {} seconds.",
-            BLOCK_ADJUSTMENT_FREQUENCY,
+            self.config.block_adjustment_frequency,
             avg_mining_time
         );
     }
 
     pub fn add_mining_time(&mut self, duration: Duration, hash_count: u64) {
-        if self.last_mining_times.len() >= BLOCK_ADJUSTMENT_FREQUENCY {
+        if self.last_mining_times.len() >= self.config.block_adjustment_frequency {
             self.last_mining_times.pop_front();
         }
         self.last_mining_times.push_back(duration.as_secs_f64());

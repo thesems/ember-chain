@@ -1,11 +1,5 @@
 use crate::{
-    block::{block_header::BlockHeader, transaction::Transaction, Block},
-    constants::{BLOCK_ADJUSTMENT_FREQUENCY, BLOCK_TIME_SECS, START_DIFFICULTY_BIT},
-    database::{database::Database, InMemoryDatabase},
-    crypto::hash_utils::HashResult,
-    crypto::merkle_tree::generate_merkle_root,
-    mining::miner::Miner,
-    api::server::Server,
+    api::server::Server, block::{block_header::BlockHeader, transaction::Transaction, Block}, config::models::Config, crypto::{hash_utils::HashResult, merkle_tree::generate_merkle_root}, database::{database::Database, InMemoryDatabase}, mining::miner::Miner
 };
 use crossbeam::channel::{select, unbounded, Receiver};
 use rand::prelude::*;
@@ -17,6 +11,7 @@ use std::{
 };
 
 pub struct Blockchain {
+    config: Config,
     block_uids: HashMap<HashResult, usize>,
     database: Arc<Mutex<dyn Database + Send + Sync>>,
     pending_transactions: Arc<Mutex<Vec<Transaction>>>,
@@ -26,8 +21,8 @@ pub struct Blockchain {
     miner: Miner,
 }
 
-impl Default for Blockchain {
-    fn default() -> Self {
+impl Blockchain {
+    pub fn new(config: Config) -> Self {
         let (tx_sender, tx_recv) = unbounded::<Transaction>();
         Self {
             block_uids: HashMap::new(),
@@ -36,12 +31,10 @@ impl Default for Blockchain {
             running: true,
             server: Arc::new(Server::new(tx_sender)),
             tx_recv: Arc::new(Mutex::new(tx_recv)),
-            miner: Miner::new(START_DIFFICULTY_BIT),
+            miner: Miner::new(config.mining.clone()),
+            config,
         }
     }
-}
-
-impl Blockchain {
     pub fn run(&mut self) {
         let server = self.server.clone();
         let server_handle = thread::spawn(move || {
@@ -68,7 +61,7 @@ impl Blockchain {
                 let block = self.mine_or_receive();
                 let mut db = self.database.lock().unwrap();
                 db.insert_block(block);
-                if db.block_height() % BLOCK_ADJUSTMENT_FREQUENCY == 0 {
+                if db.block_height() % self.config.mining.block_adjustment_frequency == 0 {
                     self.miner.adjust_difficulty();
                 }
             }
@@ -91,7 +84,7 @@ impl Blockchain {
         let mut rng = rand::thread_rng();
         let wait_time = rng.gen::<f32>().max(0.8);
         thread::sleep(Duration::new(
-            (wait_time * BLOCK_TIME_SECS as f32) as u64,
+            (wait_time * self.config.mining.block_time_secs as f32) as u64,
             0,
         ));
 
