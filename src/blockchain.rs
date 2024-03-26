@@ -1,6 +1,7 @@
 use crate::{
     block::{block_header::BlockHeader, transaction::Transaction, Block},
     constants::{BLOCK_ADJUSTMENT_FREQUENCY, BLOCK_TIME_SECS, START_DIFFICULTY_BIT},
+    database::{database::Database, InMemoryDatabase},
     hash_utils::HashResult,
     merkle_tree::generate_merkle_root,
     mining::miner::Miner,
@@ -17,11 +18,11 @@ use std::{
 
 pub struct Blockchain {
     block_uids: HashMap<HashResult, usize>,
-    blocks: Vec<Block>,
+    database: Arc<Mutex<dyn Database + Send + Sync>>,
     pending_transactions: Arc<Mutex<Vec<Transaction>>>,
     running: bool,
     server: Arc<Server>,
-    tx_recv: Receiver<Transaction>,
+    tx_recv: Arc<Mutex<Receiver<Transaction>>>,
     miner: Miner,
 }
 
@@ -30,11 +31,11 @@ impl Default for Blockchain {
         let (tx_sender, tx_recv) = unbounded::<Transaction>();
         Self {
             block_uids: HashMap::new(),
-            blocks: vec![],
+            database: Arc::new(Mutex::new(InMemoryDatabase::new())),
             pending_transactions: Arc::new(Mutex::new(vec![])),
             running: true,
             server: Arc::new(Server::new(tx_sender)),
-            tx_recv,
+            tx_recv: Arc::new(Mutex::new(tx_recv)),
             miner: Miner::new(START_DIFFICULTY_BIT),
         }
     }
@@ -42,44 +43,49 @@ impl Default for Blockchain {
 
 impl Blockchain {
     pub fn run(&mut self) {
-        self.add_genesis_block();
-
         let server = self.server.clone();
         let server_handle = thread::spawn(move || {
             server.listen();
         });
 
-        while self.running {
-            let block = self.mine_or_receive();
-            self.add_block(block);
-            if self.blocks.len() % BLOCK_ADJUSTMENT_FREQUENCY == 0 {
-                self.miner.adjust_difficulty();
-            }
-        }
+        let tx_recv = self.tx_recv.clone();
+        let pen_txs = self.pending_transactions.clone();
 
-        server_handle.join().unwrap();
+        thread::scope(|s| {
+            s.spawn(|| loop {
+                match tx_recv.lock().unwrap().recv() {
+                    Ok(tx) => {
+                        pen_txs.lock().unwrap().push(tx);
+                    }
+                    Err(_e) => {
+                        todo!()
+                    }
+                }
+            });
+
+            self.add_genesis_block();
+            while self.running {
+                let block = self.mine_or_receive();
+                let mut db = self.database.lock().unwrap();
+                db.insert_block(block);
+                if db.block_height() % BLOCK_ADJUSTMENT_FREQUENCY == 0 {
+                    self.miner.adjust_difficulty();
+                }
+            }
+
+            server_handle.join().unwrap();
+        });
     }
     fn add_genesis_block(&mut self) {
         let time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards.");
 
-        self.blocks.push(Block {
+        self.database.lock().unwrap().insert_block(Block {
             header: BlockHeader::from([0u8; 32], [0u8; 32], 0, time.as_secs()),
             transactions: vec![],
             hash: [0u8; 32],
         });
-        log::info!("Genesis block added.");
-    }
-    fn add_block(&mut self, block: Block) {
-        self.blocks.push(block);
-        log::info!("Added a new block with height {}.", self.block_height());
-    }
-    fn head(&self) -> Option<&Block> {
-        self.blocks.last()
-    }
-    fn block_height(&self) -> usize {
-        self.blocks.len()
     }
     fn recv_block(&self) -> Block {
         let mut rng = rand::thread_rng();
@@ -90,7 +96,7 @@ impl Blockchain {
         ));
 
         let mut previous_block_hash = [0u8; 32];
-        if let Some(previous_block) = self.head() {
+        if let Some(previous_block) = self.database.lock().unwrap().head() {
             previous_block_hash = previous_block.hash;
         }
         let timestamp = SystemTime::now()
@@ -104,14 +110,18 @@ impl Blockchain {
         Block::new(block_header, vec![], [0u8; 32])
     }
     fn mine_or_receive(&mut self) -> Block {
+        let start = Instant::now();
         let txs = self.pending_transactions.lock().unwrap().clone();
         let tx_hashes = txs.iter().map(|x| x.hash()).collect();
 
+        let prev_block_hash = match self.database.lock().unwrap().head() {
+            Some(block) => block.hash,
+            None => [0u8; 32],
+        };
         let merkle_root = generate_merkle_root(tx_hashes);
         let mut final_block = Block::default();
-
-        let start = Instant::now();
         let mut hash_count = 0;
+
         let (mine_sender, mine_recv) = unbounded::<Block>();
         let (net_sender, net_recv) = unbounded::<Block>();
 
@@ -123,7 +133,7 @@ impl Blockchain {
                     &txs,
                     cancel_mine_rx,
                     &mut hash_count,
-                    self.head().unwrap().hash,
+                    prev_block_hash,
                 ) {
                     mine_sender.send(block).unwrap();
                 }
@@ -132,19 +142,10 @@ impl Blockchain {
                 let block = self.recv_block();
                 net_sender.send(block).unwrap();
             });
-            s.spawn(|| loop {
-                match self.tx_recv.recv() {
-                    Ok(tx) => {
-                        self.pending_transactions.lock().unwrap().push(tx);
-                    }
-                    Err(_e) => {
-                        todo!()
-                    }
-                }
-            });
+
             final_block = select! {
                 recv(mine_recv) -> my_block => {
-                   log::info!("You succesfully mined a block!");
+                   log::info!("★★★ You successfully mined a block! ★★★");
                    my_block.unwrap()
                 }
                 recv(net_recv) -> other_block => {
@@ -155,7 +156,10 @@ impl Blockchain {
             };
         });
 
-        self.block_uids.insert(final_block.hash, self.blocks.len());
+        self.block_uids.insert(
+            final_block.hash,
+            self.database.lock().unwrap().block_height(),
+        );
         self.miner.add_mining_time(start.elapsed(), hash_count);
         final_block
     }

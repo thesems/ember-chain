@@ -10,7 +10,7 @@ pub struct InMemoryDatabase {
 }
 
 impl InMemoryDatabase {
-    fn new() -> Self {
+    pub fn new() -> Self {
         InMemoryDatabase {
             blocks: vec![],
             unspent_outputs: HashSet::new(),
@@ -18,13 +18,34 @@ impl InMemoryDatabase {
     }
 }
 
+impl Default for InMemoryDatabase {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Database for InMemoryDatabase {
     fn insert_block(&mut self, block: Block) {
-        println!("Inserting block into in-memory database.");
+        let block_height = self.block_height();
+        self.blocks.push(block);
+
+        if block_height == 0 {
+            log::info!("Added the genesis block!");
+        } else {
+            log::info!("Added a block at height {}.", block_height);
+        }
     }
 
     fn get_blocks(&self) -> &[Block] {
         &self.blocks
+    }
+
+    fn block_height(&self) -> usize {
+        self.blocks.len()
+    }
+
+    fn head(&self) -> Option<&Block> {
+        self.blocks.last()
     }
 
     fn add_utxo(&mut self, tx_hash: String, output_index: usize) {
@@ -53,6 +74,8 @@ mod tests {
     fn test_insert_block() {
         let mut in_memory_db = InMemoryDatabase::new();
         in_memory_db.insert_block(Block::default());
-        assert_eq!(in_memory_db.blocks.len(), 1)
+        assert_eq!(in_memory_db.blocks.len(), 1);
+        in_memory_db.insert_block(Block::default());
+        assert_eq!(in_memory_db.blocks.len(), 2);
     }
 }
