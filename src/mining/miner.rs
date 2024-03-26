@@ -21,7 +21,7 @@ impl Miner {
         Self {
             difficulty: config.start_difficulty_bit,
             hash_per_secs: 0.0,
-            last_mining_times: VecDeque::with_capacity(config.block_adjustment_frequency),
+            last_mining_times: VecDeque::with_capacity(config.block_adjustment_interval),
             config,
         }
     }
@@ -73,13 +73,13 @@ impl Miner {
 
         log::info!(
             "Average block time during last {} blocks was {} seconds.",
-            self.config.block_adjustment_frequency,
+            self.config.block_adjustment_interval,
             avg_mining_time
         );
     }
 
     pub fn add_mining_time(&mut self, duration: Duration, hash_count: u64) {
-        if self.last_mining_times.len() >= self.config.block_adjustment_frequency {
+        if self.last_mining_times.len() >= self.config.block_adjustment_interval {
             self.last_mining_times.pop_front();
         }
         self.last_mining_times.push_back(duration.as_secs_f64());

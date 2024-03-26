@@ -13,6 +13,9 @@ pub trait Database {
     /// Retrieves the last block inserted.
     fn head(&self) -> Option<&Block>;
 
+    /// Inserts a pair of block hash and block height 
+    // fn insert_block_hash(
+
     /// Adds a new unspent transaction output (UTXO).
     fn add_utxo(&mut self, tx_hash: String, output_index: usize);
 

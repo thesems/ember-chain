@@ -2,13 +2,12 @@ use crate::{
     api::server::Server,
     block::{block_header::BlockHeader, transaction::Transaction, Block},
     config::models::Config,
-    crypto::{hash_utils::HashResult, merkle_tree::generate_merkle_root},
+    crypto::merkle_tree::generate_merkle_root,
     database::{database::Database, InMemoryDatabase},
     mining::miner::Miner,
 };
 use crossbeam::channel::{select, unbounded, Receiver};
 use std::{
-    collections::HashMap,
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -20,7 +19,6 @@ pub struct Blockchain {
     database: Arc<Mutex<dyn Database + Send + Sync>>,
     server: Arc<Server>,
     miner: Miner,
-    block_uids: HashMap<HashResult, usize>,
     pending_transactions: Arc<Mutex<Vec<Transaction>>>,
     transactions_rx: Arc<Mutex<Receiver<Transaction>>>,
 }
@@ -33,7 +31,6 @@ impl Blockchain {
             database: Arc::new(Mutex::new(InMemoryDatabase::new())),
             server: Arc::new(Server::new(transactions_tx)),
             miner: Miner::new(config.mining.clone()),
-            block_uids: HashMap::new(),
             pending_transactions: Arc::new(Mutex::new(vec![])),
             transactions_rx: Arc::new(Mutex::new(transactions_rx)),
             config,
@@ -62,10 +59,10 @@ impl Blockchain {
 
             self.add_genesis_block();
             while self.running {
-                let block = self.mine_or_receive();
+                let block = self.get_next_block();
                 let mut db = self.database.lock().unwrap();
                 db.insert_block(block);
-                if db.block_height() % self.config.mining.block_adjustment_frequency == 0 {
+                if db.block_height() % self.config.mining.block_adjustment_interval == 0 {
                     self.miner.adjust_difficulty();
                 }
             }
@@ -115,7 +112,7 @@ impl Blockchain {
         block_header.nonce = 0;
         Block::new(block_header, vec![], [0u8; 32])
     }
-    fn mine_or_receive(&mut self) -> Block {
+    fn get_next_block(&mut self) -> Block {
         let start = Instant::now();
         let txs = self.pending_transactions.lock().unwrap().clone();
         let tx_hashes = txs.iter().map(|x| x.hash()).collect();
@@ -164,10 +161,6 @@ impl Blockchain {
             };
         });
 
-        self.block_uids.insert(
-            final_block.hash,
-            self.database.lock().unwrap().block_height(),
-        );
         self.miner.add_mining_time(start.elapsed(), hash_count);
         final_block
     }

@@ -1,4 +1,6 @@
 [mining]
 block_time_secs = 10
-block_adjustment_frequency = 10
+block_adjustment_interval = 10
 start_difficulty_bit = 22
+mining_reward = 50
+reward_halvening_interval = 100
