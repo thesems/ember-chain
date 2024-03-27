@@ -1,10 +1,11 @@
 use crate::{
     api::server::Server,
-    block::{block_header::BlockHeader, transaction::Transaction, Block},
+    block::{block_header::BlockHeader, Block},
     config::models::Config,
     crypto::merkle_tree::generate_merkle_root,
     database::{database::Database, InMemoryDatabase},
     mining::miner::Miner,
+    transaction::Transaction,
 };
 use crossbeam::channel::{select, unbounded, Receiver};
 use std::{
@@ -77,7 +78,10 @@ impl Blockchain {
 
         self.database.lock().unwrap().insert_block(Block {
             header: BlockHeader::from([0u8; 32], [0u8; 32], 0, time.as_secs()),
-            transactions: vec![],
+            transactions: vec![Transaction::create_coinbase(
+                self.config.mining.mining_reward,
+                &[0u8; 32],
+            )],
             hash: [0u8; 32],
         });
     }

@@ -9,6 +9,13 @@ pub struct Input {
     script_sig: Script,
 }
 impl Input {
+    pub fn new(prev_tx_hash: HashResult, prev_tx_output_index: u32, script_sig: Script) -> Self {
+        Self {
+            prev_tx_hash,
+            prev_tx_output_index,
+            script_sig,
+        }
+    }
     pub fn hash(&self) -> Vec<u8> {
         let mut result = Vec::from(self.prev_tx_hash);
         for b in self.prev_tx_output_index.to_be_bytes() {

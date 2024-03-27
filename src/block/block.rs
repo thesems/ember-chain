@@ -1,6 +1,6 @@
-use crate::crypto::hash_utils::HashResult;
+use crate::{crypto::hash_utils::HashResult, transaction::Transaction};
 
-use super::{BlockHeader, Transaction};
+use super::BlockHeader;
 
 #[derive(Default)]
 pub struct Block {

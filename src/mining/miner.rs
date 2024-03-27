@@ -6,7 +6,7 @@ use std::{
 use crossbeam::channel::Receiver;
 
 use crate::{
-    block::{Block, BlockHeader, Transaction}, config::models::MiningConfig, crypto::hash_utils::HashResult, mining::pow_utils::proof_of_work
+    block::{Block, BlockHeader}, config::models::MiningConfig, crypto::hash_utils::HashResult, mining::pow_utils::proof_of_work, transaction::Transaction
 };
 
 pub struct Miner {

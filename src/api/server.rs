@@ -1,11 +1,11 @@
-use crate::block::transaction::Transaction;
 use crossbeam::channel::Sender;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
     io::{prelude::*, BufReader},
     net::{TcpListener, TcpStream},
 };
+
+use crate::transaction::Transaction;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct ReceiverAmount {
