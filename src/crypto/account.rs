@@ -36,17 +36,11 @@ impl Account {
     pub fn public_key(&self) -> &[u8] {
         self.key_pair.public_key().as_ref()
     }
-
-    pub fn verify(&self, message: &[u8], public_key: &[u8], signature: &[u8]) -> Result<(), AccountError> {
-        let public_key = ring::signature::UnparsedPublicKey::new(&signature::ED25519, public_key);
-        public_key.verify(message, signature)?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::account::Account;
+    use crate::crypto::{account::Account, signature::verify};
 
     #[test]
     fn test_create_account() {
@@ -57,7 +51,7 @@ mod tests {
         let signature = account.sign(message);
 
         // Validate the signature
-        let is_valid = account.verify(message, account.public_key(), &signature).is_ok();
+        let is_valid = verify(message, account.public_key(), &signature).is_ok();
 
         assert!(is_valid);
     }

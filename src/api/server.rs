@@ -57,9 +57,8 @@ impl Server {
                     serde_json::from_str::<AddTransactionRequest>(tokens.last().unwrap())
                 {
                     log::debug!("POST /transaction {:?}", req);
-                    let outputs = HashMap::new();
-                    let tx = Transaction::from(vec![], outputs);
-                    self.sender_tx.send(tx).unwrap();
+                    // let tx = Transaction::new();
+                    // self.sender_tx.send(tx).unwrap();
                 }
             }
             ("GET", "/") => {
