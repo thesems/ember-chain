@@ -1,15 +1,11 @@
 use std::{
-    collections::VecDeque, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}
+    collections::VecDeque, sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 
 use crossbeam::channel::Receiver;
 
 use crate::{
-    block::{Block, BlockHeader},
-    config::models::MiningConfig,
-    crypto::{account::Account, hash_utils::HashResult, merkle_tree::generate_merkle_root},
-    mining::pow_utils::proof_of_work,
-    transaction::Transaction, types::Satoshi,
+    block::{Block, BlockHeader}, config::models::MiningConfig, crypto::{account::Account, hash_utils::HashResult, merkle_tree::generate_merkle_root}, database::database::DatabaseType, mining::pow_utils::proof_of_work, transaction::Transaction, types::Satoshi
 };
 
 pub struct Miner {
@@ -33,6 +29,7 @@ impl Miner {
 
     pub fn mine(
         &self,
+        database: &Arc<Mutex<DatabaseType>>,
         transactions: &[Transaction],
         cancel_mine_rx: Receiver<()>,
         hash_count: &mut u64,
@@ -40,7 +37,7 @@ impl Miner {
         reward: Satoshi,
     ) -> Option<Block> {
 
-        let coinbase = Transaction::create_coinbase(reward);
+        let coinbase = Transaction::create_coinbase(reward, self.account.public_key().to_vec());
         let coinbase_hash = coinbase.hash();
         let coinbase_amount = coinbase.get_amount(0).unwrap_or(0);
         let mut txs = vec![
@@ -54,6 +51,13 @@ impl Miner {
         ];
         txs.append(&mut transactions.to_vec());
 
+        {
+            let mut db = database.lock().unwrap();
+            for tx in txs.iter() {
+                db.add_transaction(tx.hash(), tx.clone());
+            }
+        }
+
         let tx_hashes = txs.iter().map(|x| x.hash()).collect();
         let merkle_root = generate_merkle_root(tx_hashes);
 
@@ -61,8 +65,10 @@ impl Miner {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
+
         let mut block_header =
             BlockHeader::from(merkle_root, prev_block_hash, self.difficulty, timestamp);
+
         if let Some(block_hash) = proof_of_work(
             self.difficulty,
             &mut block_header,

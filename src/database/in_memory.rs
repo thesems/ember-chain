@@ -73,7 +73,11 @@ impl Database for InMemoryDatabase {
     fn add_transaction(&mut self, tx_hash: HashResult, transaction: Transaction) {
         self.transactions.insert(tx_hash, transaction);
     }
-    
+
+    fn remove_transaction(&mut self, tx_hash: HashResult) -> Option<Transaction> {
+        self.transactions.remove(&tx_hash)
+    }
+
     fn get_transaction(&mut self, tx_hash: HashResult) -> Option<&Transaction> {
         self.transactions.get(&tx_hash)
     }

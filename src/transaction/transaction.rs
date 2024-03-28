@@ -1,16 +1,18 @@
+use std::sync::{Arc, Mutex};
+
 use crate::{
     crypto::{
         account::Account,
         hash_utils::{sha256, HashResult},
     },
-    database::database::Database,
+    database::database::{Database, DatabaseType},
     types::Satoshi,
 };
 
 use super::{
     input::Input,
     output::Output,
-    script::{Item, Operation, Script},
+    script::{Item, Operation, Script, ScriptRunner},
 };
 
 #[derive(Clone, Debug)]
@@ -28,12 +30,28 @@ impl Transaction {
         }
         None
     }
-    pub fn verify(&self, database: &mut dyn Database) -> bool {
+    pub fn verify(
+        &self,
+        current_block_reward: Satoshi,
+        database: &Arc<Mutex<DatabaseType>>,
+    ) -> bool {
         let mut total_input = 0;
         let mut total_output = 0;
 
         for input in self.inputs.iter() {
-            if let Some(tx) = database.get_transaction(input.prev_tx_hash) {
+            if input.prev_tx_hash == [0u8; 32] && input.prev_tx_output_index == 0 {
+                // coinbase transaction
+                total_input += current_block_reward;
+                
+                if self.inputs.len() > 1 {
+                    log::error!("Coinbase transaction can only have a single input.");
+                    return false;
+                }
+
+                continue;
+            }
+
+            if let Some(tx) = database.lock().unwrap().get_transaction(input.prev_tx_hash) {
                 if let Some(amount) = tx.get_amount(input.prev_tx_output_index) {
                     total_input += amount;
                 } else {
@@ -42,7 +60,6 @@ impl Transaction {
                     );
                     return false;
                 }
-
             } else {
                 log::error!("Transaction input is referencing a non-existent transaction output.");
                 return false;
@@ -53,12 +70,35 @@ impl Transaction {
             total_output += output.value;
         }
 
-        total_input == total_output
+        if total_input != total_output {
+            log::error!(
+                "Total input amount {} != {} output amount.",
+                total_input,
+                total_output
+            );
+            return false;
+        }
+        true
     }
-    pub fn verify_script(&self) -> bool {
-        todo!()
+    pub fn verify_inputs(&self, database: &Arc<Mutex<DatabaseType>>) -> bool {
+        for input in &self.inputs {
+            if let Some(prev_tx) = database.lock().unwrap().get_transaction(input.prev_tx_hash) {
+                if let Some(prev_tx_output) =
+                    prev_tx.outputs.get(input.prev_tx_output_index as usize)
+                {
+                    let mut script_runner = ScriptRunner::new(prev_tx.hash());
+                    let mut items = input.script_sig.items.clone();
+                    items.append(&mut prev_tx_output.script_pub_key.items.clone());
+                    if !script_runner.execute_script(items) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
     }
-    pub fn create_coinbase(reward: Satoshi) -> Transaction {
+    pub fn create_coinbase(reward: Satoshi, pub_key: Vec<u8>) -> Transaction {
         Transaction::new(
             vec![Input::new(
                 [0u8; 32],
@@ -67,7 +107,11 @@ impl Transaction {
             )],
             vec![Output::new(
                 reward,
-                Script::new(vec![Item::Operation(Operation::True)]),
+                Script::new(vec![
+                    Item::Data(pub_key),
+                    Item::Operation(Operation::Dup),
+                    Item::Operation(Operation::Equal),
+                ]),
             )],
         )
     }

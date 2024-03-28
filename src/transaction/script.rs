@@ -28,7 +28,7 @@ pub enum Item {
 
 #[derive(Clone, Debug)]
 pub struct Script {
-    items: Vec<Item>,
+    pub items: Vec<Item>,
 }
 impl Script {
     pub fn new(items: Vec<Item>) -> Self {
@@ -151,6 +151,8 @@ impl ScriptRunner {
         self.verify()
     }
 
+    /// Checks if the signature is created by signing the hashed transaction
+    /// data using the public key.
     fn check_signature(&mut self) -> bool {
         if let (Some(sig), Some(pubkey)) = (self.pop_stack(), self.pop_stack()) {
             verify(&sig, &pubkey, &self.hashed_tx_data).is_ok()

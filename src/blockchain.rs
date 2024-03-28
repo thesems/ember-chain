@@ -3,7 +3,7 @@ use crate::{
     block::{block_header::BlockHeader, Block},
     config::models::Config,
     crypto::account::{Account, AccountError},
-    database::{database::Database, InMemoryDatabase},
+    database::{database::{Database, DatabaseType}, InMemoryDatabase},
     mining::miner::Miner,
     transaction::Transaction,
     types::Satoshi,
@@ -18,7 +18,7 @@ use std::{
 pub struct Blockchain {
     config: Config,
     running: bool,
-    database: Arc<Mutex<dyn Database + Send + Sync>>,
+    database: Arc<Mutex<DatabaseType>>,
     server: Arc<Server>,
     account: Arc<Account>,
     miner: Miner,
@@ -77,6 +77,16 @@ impl Blockchain {
             self.add_genesis_block();
             while self.running {
                 let block = self.get_next_block();
+
+                if !block.verify(self.current_block_reward, &self.database) {
+                    log::warn!("☠☠ Invalid block ☠☠ {:?}.", block.hash);
+                    let mut db = self.database.lock().unwrap();
+                    for tx in block.transactions.iter() {
+                        db.remove_transaction(tx.hash());
+                    }
+                    continue;
+                }
+
                 let mut db = self.database.lock().unwrap();
                 db.insert_block(block);
                 if db.block_height() % self.config.mining.block_adjustment_interval == 0 {
@@ -96,6 +106,7 @@ impl Blockchain {
             header: BlockHeader::from([0u8; 32], [0u8; 32], 0, time.as_secs()),
             transactions: vec![Transaction::create_coinbase(
                 self.config.mining.mining_reward,
+                [0u8; 32].to_vec(),
             )],
             hash: [0u8; 32],
         });
@@ -150,6 +161,7 @@ impl Blockchain {
         thread::scope(|s| {
             s.spawn(|| {
                 if let Some(block) = self.miner.mine(
+                    &self.database,
                     &txs,
                     mining_cancel_rx,
                     &mut hash_count,

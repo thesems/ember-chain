@@ -1,4 +1,9 @@
-use crate::{crypto::hash_utils::HashResult, transaction::Transaction};
+use std::sync::{Arc, Mutex};
+
+use crate::{
+    crypto::hash_utils::HashResult, database::database::DatabaseType, transaction::Transaction,
+    types::Satoshi,
+};
 
 use super::BlockHeader;
 
@@ -15,5 +20,17 @@ impl Block {
             transactions,
             hash,
         }
+    }
+    pub fn verify(
+        &self,
+        current_block_reward: Satoshi,
+        database: &Arc<Mutex<DatabaseType>>,
+    ) -> bool {
+        for tx in self.transactions.iter() {
+            if !tx.verify(current_block_reward, database) || !tx.verify_inputs(database) {
+                return false;
+            }
+        }
+        true
     }
 }

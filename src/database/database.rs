@@ -1,5 +1,7 @@
 use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transaction};
 
+pub type DatabaseType = dyn Database + Send + Sync;
+
 pub trait Database {
     /// Inserts a block into the database.
     fn insert_block(&mut self, block: Block);
@@ -25,6 +27,9 @@ pub trait Database {
     /// Adds a transaction identified by its hash
     fn add_transaction(&mut self, tx_hash: HashResult, transaction: Transaction);
     
+    /// Removes a transaction identified by its hash
+    fn remove_transaction(&mut self, tx_hash: HashResult) -> Option<Transaction>;
+
     /// Searches for a transaction given its hash
     fn get_transaction(&mut self, tx_hash: HashResult) -> Option<&Transaction>;
 }
