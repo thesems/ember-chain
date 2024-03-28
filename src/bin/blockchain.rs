@@ -8,7 +8,7 @@ fn main() {
     let app_name = "ember-chain";
     log::info!("Application '{}' started.", app_name);
 
-    let config = load_toml("./config.toml");
+    let config = load_toml("./configs/config.toml");
     log::info!("{:#?}", config);
 
     let mut blockchain = match Blockchain::new(config) {

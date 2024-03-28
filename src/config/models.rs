@@ -16,3 +16,8 @@ pub struct Config {
     pub mining: MiningConfig,
 }
 
+#[derive(Deserialize, Clone, Debug)]
+pub struct WalletConfig {
+    pub private_key: String,
+    pub public_key: String,
+}
