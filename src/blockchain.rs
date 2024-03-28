@@ -2,10 +2,14 @@ use crate::{
     api::server::Server,
     block::{block_header::BlockHeader, Block},
     config::models::Config,
-    crypto::merkle_tree::generate_merkle_root,
+    crypto::{
+        account::{Account, AccountError},
+        merkle_tree::generate_merkle_root,
+    },
     database::{database::Database, InMemoryDatabase},
     mining::miner::Miner,
     transaction::Transaction,
+    types::Satoshi,
 };
 use crossbeam::channel::{select, unbounded, Receiver};
 use std::{
@@ -19,23 +23,38 @@ pub struct Blockchain {
     running: bool,
     database: Arc<Mutex<dyn Database + Send + Sync>>,
     server: Arc<Server>,
+    account: Arc<Account>,
     miner: Miner,
     pending_transactions: Arc<Mutex<Vec<Transaction>>>,
     transactions_rx: Arc<Mutex<Receiver<Transaction>>>,
+    current_block_reward: Satoshi,
+}
+
+#[derive(Debug)]
+pub enum BlockchainError {
+    AccountError,
+}
+impl From<AccountError> for BlockchainError {
+    fn from(_: AccountError) -> Self {
+        BlockchainError::AccountError
+    }
 }
 
 impl Blockchain {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config) -> Result<Self, BlockchainError> {
         let (transactions_tx, transactions_rx) = unbounded::<Transaction>();
-        Self {
+        let account = Arc::new(Account::new()?);
+        Ok(Self {
             running: true,
             database: Arc::new(Mutex::new(InMemoryDatabase::new())),
             server: Arc::new(Server::new(transactions_tx)),
-            miner: Miner::new(config.mining.clone()),
+            miner: Miner::new(config.mining.clone(), account.clone()),
+            account,
             pending_transactions: Arc::new(Mutex::new(vec![])),
             transactions_rx: Arc::new(Mutex::new(transactions_rx)),
+            current_block_reward: config.mining.mining_reward,
             config,
-        }
+        })
     }
     pub fn run(&mut self) {
         let server = self.server.clone();
@@ -80,7 +99,6 @@ impl Blockchain {
             header: BlockHeader::from([0u8; 32], [0u8; 32], 0, time.as_secs()),
             transactions: vec![Transaction::create_coinbase(
                 self.config.mining.mining_reward,
-                &[0u8; 32],
             )],
             hash: [0u8; 32],
         });
@@ -119,13 +137,11 @@ impl Blockchain {
     fn get_next_block(&mut self) -> Block {
         let start = Instant::now();
         let txs = self.pending_transactions.lock().unwrap().clone();
-        let tx_hashes = txs.iter().map(|x| x.hash()).collect();
 
         let prev_block_hash = match self.database.lock().unwrap().head() {
             Some(block) => block.hash,
             None => [0u8; 32],
         };
-        let merkle_root = generate_merkle_root(tx_hashes);
         let mut final_block = Block::default();
         let mut hash_count = 0;
 
@@ -137,11 +153,11 @@ impl Blockchain {
         thread::scope(|s| {
             s.spawn(|| {
                 if let Some(block) = self.miner.mine(
-                    merkle_root,
                     &txs,
                     mining_cancel_rx,
                     &mut hash_count,
                     prev_block_hash,
+                    self.current_block_reward,
                 ) {
                     mining_tx.send(block).unwrap();
                 }

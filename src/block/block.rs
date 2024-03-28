@@ -2,7 +2,7 @@ use crate::{crypto::hash_utils::HashResult, transaction::Transaction};
 
 use super::BlockHeader;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Block {
     pub header: BlockHeader,
     pub transactions: Vec<Transaction>,

@@ -6,3 +6,4 @@ pub mod database;
 pub mod crypto;
 pub mod transaction;
 pub mod config;
+pub mod types;

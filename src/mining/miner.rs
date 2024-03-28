@@ -1,39 +1,62 @@
 use std::{
-    collections::VecDeque,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    collections::VecDeque, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 
 use crossbeam::channel::Receiver;
 
 use crate::{
-    block::{Block, BlockHeader}, config::models::MiningConfig, crypto::hash_utils::HashResult, mining::pow_utils::proof_of_work, transaction::Transaction
+    block::{Block, BlockHeader},
+    config::models::MiningConfig,
+    crypto::{account::Account, hash_utils::HashResult, merkle_tree::generate_merkle_root},
+    mining::pow_utils::proof_of_work,
+    transaction::Transaction, types::Satoshi,
 };
 
 pub struct Miner {
     config: MiningConfig,
     difficulty: u8,
     hash_per_secs: f64,
+    account: Arc<Account>,
     last_mining_times: VecDeque<f64>,
 }
 
 impl Miner {
-    pub fn new(config: MiningConfig) -> Self {
+    pub fn new(config: MiningConfig, account: Arc<Account>) -> Self {
         Self {
             difficulty: config.start_difficulty_bit,
             hash_per_secs: 0.0,
             last_mining_times: VecDeque::with_capacity(config.block_adjustment_interval),
+            account,
             config,
         }
     }
 
     pub fn mine(
         &self,
-        merkle_root: HashResult,
         transactions: &[Transaction],
         cancel_mine_rx: Receiver<()>,
         hash_count: &mut u64,
         prev_block_hash: HashResult,
+        reward: Satoshi,
     ) -> Option<Block> {
+
+        let coinbase = Transaction::create_coinbase(reward);
+        let coinbase_hash = coinbase.hash();
+        let coinbase_amount = coinbase.get_amount(0).unwrap_or(0);
+        let mut txs = vec![
+            coinbase,
+            Transaction::create_pay_to_pubkey_hash(
+                coinbase_hash,
+                0,
+                coinbase_amount,
+                &self.account,
+            ),
+        ];
+        txs.append(&mut transactions.to_vec());
+
+        let tx_hashes = txs.iter().map(|x| x.hash()).collect();
+        let merkle_root = generate_merkle_root(tx_hashes);
+
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -46,7 +69,7 @@ impl Miner {
             cancel_mine_rx,
             hash_count,
         ) {
-            let block = Block::new(block_header, transactions.to_vec(), block_hash);
+            let block = Block::new(block_header, txs, block_hash);
             return Some(block);
         }
         None

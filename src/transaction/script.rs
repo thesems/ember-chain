@@ -20,13 +20,13 @@ pub enum Operation {
     CheckSig = 172,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Item {
     Data(StackItem),
     Operation(Operation),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Script {
     items: Vec<Item>,
 }
@@ -85,7 +85,6 @@ impl ScriptRunner {
             Operation::Equal => self.equal(),
             Operation::EqualVerify => self.equal_verify(),
             Operation::CheckSig => self.check_signature(),
-            _ => false,
         }
     }
 

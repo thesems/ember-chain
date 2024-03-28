@@ -1,4 +1,10 @@
-use crate::crypto::hash_utils::{sha256, HashResult};
+use crate::{
+    crypto::{
+        account::Account,
+        hash_utils::{sha256, HashResult},
+    },
+    types::Satoshi,
+};
 
 use super::{
     input::Input,
@@ -6,7 +12,7 @@ use super::{
     script::{Item, Operation, Script},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Transaction {
     inputs: Vec<Input>,
     outputs: Vec<Output>,
@@ -15,7 +21,13 @@ impl Transaction {
     pub fn new(inputs: Vec<Input>, outputs: Vec<Output>) -> Self {
         Self { inputs, outputs }
     }
-    pub fn create_coinbase(reward: u64, pub_key: &[u8]) -> Transaction {
+    pub fn get_amount(&self, output_index: usize) -> Option<u64> {
+        if let Some(output) = self.outputs.get(output_index) {
+            return Some(output.value());
+        }
+        None
+    }
+    pub fn create_coinbase(reward: Satoshi) -> Transaction {
         Transaction::new(
             vec![Input::new(
                 [0u8; 32],
@@ -24,7 +36,7 @@ impl Transaction {
             )],
             vec![Output::new(
                 reward,
-                Script::new(Self::get_coinbase(pub_key)),
+                Script::new(vec![Item::Operation(Operation::True)]),
             )],
         )
     }
@@ -32,20 +44,31 @@ impl Transaction {
         prev_tx_hash: HashResult,
         prev_tx_output_index: u32,
         amount: u64,
-        pub_key: &[u8],
-        sig: &[u8],
+        account: &Account,
     ) -> Transaction {
-        Transaction::new(
+        let mut tx = Transaction::new(
             vec![Input::new(
                 prev_tx_hash,
                 prev_tx_output_index,
-                Script::new(vec![Item::Data(sig.to_vec()), Item::Data(pub_key.to_vec())]),
+                Script::new(vec![]),
             )],
             vec![Output::new(
                 amount,
-                Script::new(Self::get_pay_to_pubkey_hash(pub_key)),
+                Script::new(vec![
+                    Item::Operation(Operation::Dup),
+                    Item::Operation(Operation::Hash256),
+                    Item::Data(account.public_key().to_vec()),
+                    Item::Operation(Operation::EqualVerify),
+                    Item::Operation(Operation::CheckSig),
+                ]),
             )],
-        )
+        );
+        let tx_hash = tx.hash();
+        tx.inputs[0].set_script(Script::new(vec![
+            Item::Data(account.sign(&tx_hash).to_vec()),
+            Item::Data(account.public_key().to_vec()),
+        ]));
+        tx
     }
     pub fn hash(&self) -> HashResult {
         let mut bytes = vec![];
@@ -56,21 +79,5 @@ impl Transaction {
             bytes.append(&mut output.hash().clone());
         }
         sha256(&bytes)
-    }
-    fn get_coinbase(pub_key: &[u8]) -> Vec<Item> {
-        vec![
-            Item::Data(pub_key.to_vec()),
-            Item::Operation(Operation::Dup),
-            Item::Operation(Operation::Equal),
-        ]
-    }
-    fn get_pay_to_pubkey_hash(pub_key: &[u8]) -> Vec<Item> {
-        vec![
-            Item::Operation(Operation::Dup),
-            Item::Operation(Operation::Hash256),
-            Item::Data(pub_key.to_vec()),
-            Item::Operation(Operation::EqualVerify),
-            Item::Operation(Operation::CheckSig),
-        ]
     }
 }

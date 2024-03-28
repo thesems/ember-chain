@@ -27,12 +27,13 @@ impl Default for InMemoryDatabase {
 impl Database for InMemoryDatabase {
     fn insert_block(&mut self, block: Block) {
         let block_height = self.block_height();
-        self.blocks.push(block);
+        log::debug!("Block ({}): {:?}", block_height, block);
 
+        self.blocks.push(block);
         if block_height == 0 {
             log::info!("Added the genesis block!");
         } else {
-            log::info!("Added a block at height {}.", block_height);
+            log::info!("Block added at height {}.", block_height);
         }
     }
 

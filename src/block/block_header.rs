@@ -2,7 +2,7 @@ use sha2::{Digest, Sha256};
 
 use crate::crypto::hash_utils::HashResult;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct BlockHeader {
     pub version: u32,
     pub previous_block_hash: HashResult,
@@ -11,7 +11,6 @@ pub struct BlockHeader {
     pub difficulty: u8,
     pub nonce: u32,
 }
-
 impl BlockHeader {
     pub fn from(
         merkle_root: HashResult,
