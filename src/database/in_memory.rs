@@ -1,11 +1,12 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use crate::block::Block;
+use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transaction};
 
 use super::database::Database;
 
 pub struct InMemoryDatabase {
     blocks: Vec<Block>,
+    transactions: HashMap<HashResult, Transaction>,
     unspent_outputs: HashSet<(String, usize)>,
 }
 
@@ -13,6 +14,7 @@ impl InMemoryDatabase {
     pub fn new() -> Self {
         InMemoryDatabase {
             blocks: vec![],
+            transactions: HashMap::new(),
             unspent_outputs: HashSet::new(),
         }
     }
@@ -29,9 +31,14 @@ impl Database for InMemoryDatabase {
         let block_height = self.block_height();
         log::debug!("Block ({}): {:?}", block_height, block);
 
+        for tx in block.transactions.iter() {
+            self.add_transaction(tx.hash(), tx.clone());
+        }
+
         self.blocks.push(block);
+
         if block_height == 0 {
-            log::info!("Added the genesis block!");
+            log::info!("★★★ GENESIS BLOCK ★★★");
         } else {
             log::info!("Block added at height {}.", block_height);
         }
@@ -61,6 +68,14 @@ impl Database for InMemoryDatabase {
     fn is_utxo(&self, tx_hash: &str, output_index: usize) -> bool {
         self.unspent_outputs
             .contains(&(tx_hash.to_string(), output_index))
+    }
+
+    fn add_transaction(&mut self, tx_hash: HashResult, transaction: Transaction) {
+        self.transactions.insert(tx_hash, transaction);
+    }
+    
+    fn get_transaction(&mut self, tx_hash: HashResult) -> Option<&Transaction> {
+        self.transactions.get(&tx_hash)
     }
 }
 

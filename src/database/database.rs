@@ -1,4 +1,4 @@
-use crate::block::Block;
+use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transaction};
 
 pub trait Database {
     /// Inserts a block into the database.
@@ -13,9 +13,6 @@ pub trait Database {
     /// Retrieves the last block inserted.
     fn head(&self) -> Option<&Block>;
 
-    /// Inserts a pair of block hash and block height 
-    // fn insert_block_hash(
-
     /// Adds a new unspent transaction output (UTXO).
     fn add_utxo(&mut self, tx_hash: String, output_index: usize);
 
@@ -24,4 +21,10 @@ pub trait Database {
 
     /// Checks if a transaction output is unspent.
     fn is_utxo(&self, tx_hash: &str, output_index: usize) -> bool;
+
+    /// Adds a transaction identified by its hash
+    fn add_transaction(&mut self, tx_hash: HashResult, transaction: Transaction);
+    
+    /// Searches for a transaction given its hash
+    fn get_transaction(&mut self, tx_hash: HashResult) -> Option<&Transaction>;
 }
