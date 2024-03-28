@@ -2,10 +2,7 @@ use crate::{
     api::server::Server,
     block::{block_header::BlockHeader, Block},
     config::models::Config,
-    crypto::{
-        account::{Account, AccountError},
-        merkle_tree::generate_merkle_root,
-    },
+    crypto::account::{Account, AccountError},
     database::{database::Database, InMemoryDatabase},
     mining::miner::Miner,
     transaction::Transaction,

@@ -3,6 +3,7 @@ use crate::{
         account::Account,
         hash_utils::{sha256, HashResult},
     },
+    database::database::Database,
     types::Satoshi,
 };
 
@@ -21,11 +22,41 @@ impl Transaction {
     pub fn new(inputs: Vec<Input>, outputs: Vec<Output>) -> Self {
         Self { inputs, outputs }
     }
-    pub fn get_amount(&self, output_index: usize) -> Option<u64> {
-        if let Some(output) = self.outputs.get(output_index) {
-            return Some(output.value());
+    pub fn get_amount(&self, output_index: u32) -> Option<u64> {
+        if let Some(output) = self.outputs.get(output_index as usize) {
+            return Some(output.value);
         }
         None
+    }
+    pub fn verify(&self, database: &mut dyn Database) -> bool {
+        let mut total_input = 0;
+        let mut total_output = 0;
+
+        for input in self.inputs.iter() {
+            if let Some(tx) = database.get_transaction(input.prev_tx_hash) {
+                if let Some(amount) = tx.get_amount(input.prev_tx_output_index) {
+                    total_input += amount;
+                } else {
+                    log::error!(
+                        "Transaction input is referencing an invalid transaction output index."
+                    );
+                    return false;
+                }
+
+            } else {
+                log::error!("Transaction input is referencing a non-existent transaction output.");
+                return false;
+            }
+        }
+
+        for output in self.outputs.iter() {
+            total_output += output.value;
+        }
+
+        total_input == total_output
+    }
+    pub fn verify_script(&self) -> bool {
+        todo!()
     }
     pub fn create_coinbase(reward: Satoshi) -> Transaction {
         Transaction::new(
@@ -64,10 +95,10 @@ impl Transaction {
             )],
         );
         let tx_hash = tx.hash();
-        tx.inputs[0].set_script(Script::new(vec![
+        tx.inputs[0].script_sig = Script::new(vec![
             Item::Data(account.sign(&tx_hash).to_vec()),
             Item::Data(account.public_key().to_vec()),
-        ]));
+        ]);
         tx
     }
     pub fn hash(&self) -> HashResult {

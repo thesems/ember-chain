@@ -4,8 +4,8 @@ use super::script::Script;
 
 #[derive(Clone, Debug)]
 pub struct Output {
-    value: Satoshi,
-    script_pub_key: Script,
+    pub value: Satoshi,
+    pub script_pub_key: Script,
 }
 impl Output {
     pub fn new(value: Satoshi, script_pub_key: Script) -> Self {
@@ -13,9 +13,6 @@ impl Output {
             value,
             script_pub_key,
         }
-    }
-    pub fn value(&self) -> Satoshi {
-        self.value
     }
     pub fn hash(&self) -> Vec<u8> {
         let mut result = vec![];
