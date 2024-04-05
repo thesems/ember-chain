@@ -5,7 +5,7 @@ use crate::{
         account::Account,
         hash_utils::{sha256, HashResult},
     },
-    database::database::{Database, DatabaseType},
+    database::database::DatabaseType,
     types::Satoshi,
 };
 

@@ -2,10 +2,11 @@ use crossbeam::channel::Sender;
 use serde::{Deserialize, Serialize};
 use std::{
     io::{prelude::*, BufReader},
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpStream}, sync::{Arc, Mutex},
 };
 
-use crate::transaction::Transaction;
+use crate::{database::database::DatabaseType, transaction::Transaction};
+
 
 #[derive(Deserialize, Serialize, Debug)]
 struct ReceiverAmount {
@@ -19,16 +20,19 @@ struct AddTransactionRequest {
     receivers: Vec<ReceiverAmount>,
 }
 
-#[derive(Debug)]
 pub struct Server {
+    // dependecies
+    database: Arc<Mutex<DatabaseType>>,
+    // other
     listener: TcpListener,
     sender_tx: Sender<Transaction>,
 }
 
 impl Server {
-    pub fn new(sender_tx: Sender<Transaction>) -> Self {
+    pub fn new(sender_tx: Sender<Transaction>, database: Arc<Mutex<DatabaseType>>) -> Self {
         let listener = TcpListener::bind("localhost:1559").unwrap();
         Server {
+            database,
             listener,
             sender_tx,
         }
@@ -50,6 +54,8 @@ impl Server {
             .collect();
 
         let tokens: Vec<&str> = http_request.first().unwrap().split(' ').collect();
+        let path_tokens: Vec<&str> = tokens[1].split('/').collect();
+
         match (tokens[0], tokens[1]) {
             ("POST", "/transaction") => {
                 // { pubkey: key, outputs: [{ receiver: rcr, amount: 0 }]}
@@ -63,6 +69,13 @@ impl Server {
             }
             ("GET", "/") => {
                 log::info!("GET /");
+            }
+            ("GET", "/account") => {
+                if path_tokens.len() == 3 {
+                    // log::info!("GET /account/{pk}");
+                    let pub_key = path_tokens[2];
+                    // self.database.lock().unwrap().get_transaction_hashes(pub_key);
+                }
             }
             _ => {}
         }

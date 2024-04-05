@@ -3,7 +3,7 @@ use crate::{
     block::{block_header::BlockHeader, Block},
     config::models::Config,
     crypto::account::{Account, AccountError},
-    database::{database::{Database, DatabaseType}, InMemoryDatabase},
+    database::{database::DatabaseType, InMemoryDatabase},
     mining::miner::Miner,
     transaction::Transaction,
     types::Satoshi,
@@ -16,13 +16,14 @@ use std::{
 };
 
 pub struct Blockchain {
-    config: Config,
-    running: bool,
+    // dependencies
     database: Arc<Mutex<DatabaseType>>,
     server: Arc<Server>,
     account: Arc<Account>,
     miner: Miner,
-    pending_transactions: Arc<Mutex<Vec<Transaction>>>,
+    // other
+    config: Config,
+    running: bool,
     transactions_rx: Arc<Mutex<Receiver<Transaction>>>,
     current_block_reward: Satoshi,
 }
@@ -41,13 +42,13 @@ impl Blockchain {
     pub fn new(config: Config) -> Result<Self, BlockchainError> {
         let (transactions_tx, transactions_rx) = unbounded::<Transaction>();
         let account = Arc::new(Account::new()?);
+        let database = Arc::new(Mutex::new(InMemoryDatabase::default()));
         Ok(Self {
             running: true,
-            database: Arc::new(Mutex::new(InMemoryDatabase::new())),
-            server: Arc::new(Server::new(transactions_tx)),
+            server: Arc::new(Server::new(transactions_tx, database.clone())),
+            database,
             miner: Miner::new(config.mining.clone(), account.clone()),
             account,
-            pending_transactions: Arc::new(Mutex::new(vec![])),
             transactions_rx: Arc::new(Mutex::new(transactions_rx)),
             current_block_reward: config.mining.mining_reward,
             config,
@@ -60,13 +61,13 @@ impl Blockchain {
         });
 
         let tx_recv = self.transactions_rx.clone();
-        let pen_txs = self.pending_transactions.clone();
+        let mut pen_txs = self.database.lock().unwrap().get_pending_transactions().to_vec();
 
         thread::scope(|s| {
             s.spawn(|| loop {
                 match tx_recv.lock().unwrap().recv() {
                     Ok(tx) => {
-                        pen_txs.lock().unwrap().push(tx);
+                        pen_txs.push(tx);
                     }
                     Err(_e) => {
                         todo!()
@@ -144,7 +145,7 @@ impl Blockchain {
     }
     fn get_next_block(&mut self) -> Block {
         let start = Instant::now();
-        let txs = self.pending_transactions.lock().unwrap().clone();
+        let txs = self.database.lock().unwrap().get_pending_transactions().to_vec();
 
         let prev_block_hash = match self.database.lock().unwrap().head() {
             Some(block) => block.hash,

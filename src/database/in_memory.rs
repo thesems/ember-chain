@@ -6,16 +6,20 @@ use super::database::Database;
 
 pub struct InMemoryDatabase {
     blocks: Vec<Block>,
+    pending_transactions: Vec<Transaction>,
     transactions: HashMap<HashResult, Transaction>,
-    unspent_outputs: HashSet<(String, usize)>,
+    unspent_outputs: HashSet<(HashResult, usize)>,
+    address_to_txs: HashMap<Vec<u8>, Vec<HashResult>>,
 }
 
 impl InMemoryDatabase {
     pub fn new() -> Self {
         InMemoryDatabase {
             blocks: vec![],
+            pending_transactions: Vec::new(),
             transactions: HashMap::new(),
             unspent_outputs: HashSet::new(),
+            address_to_txs: HashMap::new(),
         }
     }
 }
@@ -56,18 +60,16 @@ impl Database for InMemoryDatabase {
         self.blocks.last()
     }
 
-    fn add_utxo(&mut self, tx_hash: String, output_index: usize) {
+    fn add_utxo(&mut self, tx_hash: HashResult, output_index: usize) {
         self.unspent_outputs.insert((tx_hash, output_index));
     }
 
-    fn remove_utxo(&mut self, tx_hash: &str, output_index: usize) {
-        self.unspent_outputs
-            .remove(&(tx_hash.to_string(), output_index));
+    fn remove_utxo(&mut self, tx_hash: &HashResult, output_index: usize) {
+        self.unspent_outputs.remove(&(*tx_hash, output_index));
     }
 
-    fn is_utxo(&self, tx_hash: &str, output_index: usize) -> bool {
-        self.unspent_outputs
-            .contains(&(tx_hash.to_string(), output_index))
+    fn is_utxo(&self, tx_hash: &HashResult, output_index: usize) -> bool {
+        self.unspent_outputs.contains(&(*tx_hash, output_index))
     }
 
     fn add_transaction(&mut self, tx_hash: HashResult, transaction: Transaction) {
@@ -80,6 +82,26 @@ impl Database for InMemoryDatabase {
 
     fn get_transaction(&mut self, tx_hash: HashResult) -> Option<&Transaction> {
         self.transactions.get(&tx_hash)
+    }
+
+    fn map_address_to_transaction_hash(&mut self, address: Vec<u8>, tx_hash: HashResult) {
+        self.address_to_txs.get_mut(&address).unwrap().push(tx_hash);
+    }
+
+    fn get_transaction_hashes(&mut self, address: Vec<u8>) -> &[HashResult] {
+        self.address_to_txs.get(&address).unwrap()
+    }
+    
+    fn add_pending_transaction(&mut self, transaction: Transaction) {
+        self.pending_transactions.push(transaction);
+    }
+    
+    fn get_pending_transactions(&self) -> &[Transaction] {
+        &self.pending_transactions
+    }
+    
+    fn clear_pending_transactions(&mut self) {
+        self.pending_transactions.clear();
     }
 }
 
