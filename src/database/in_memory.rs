@@ -84,22 +84,32 @@ impl Database for InMemoryDatabase {
         self.transactions.get(&tx_hash)
     }
 
-    fn map_address_to_transaction_hash(&mut self, address: Vec<u8>, tx_hash: HashResult) {
-        self.address_to_txs.get_mut(&address).unwrap().push(tx_hash);
+    fn map_address_to_transaction_hash(&mut self, address: &[u8], tx_hash: HashResult) {
+        if let Some(hashes) = self.address_to_txs.get_mut(address) {
+            hashes.push(tx_hash);
+        } else {
+            self.address_to_txs.insert(address.to_vec(), vec![tx_hash]);
+        }
     }
 
-    fn get_transaction_hashes(&mut self, address: Vec<u8>) -> &[HashResult] {
-        self.address_to_txs.get(&address).unwrap()
+    fn get_transaction_hashes(&mut self, address: &[u8]) -> &[HashResult] {
+        log::warn!("{:#?}", self.address_to_txs);
+
+        if let Some(txs) = self.address_to_txs.get(address) {
+            txs
+        } else {
+            &[]
+        }
     }
-    
+
     fn add_pending_transaction(&mut self, transaction: Transaction) {
         self.pending_transactions.push(transaction);
     }
-    
+
     fn get_pending_transactions(&self) -> &[Transaction] {
         &self.pending_transactions
     }
-    
+
     fn clear_pending_transactions(&mut self) {
         self.pending_transactions.clear();
     }

@@ -7,7 +7,7 @@ use crate::proto::proto_node::node_server::{Node, NodeServer};
 use crate::proto::proto_node::{Ack, Block, BlockHeight, None, PeerList, Transaction, Version};
 
 use tonic::transport::Channel;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{transport::Server, Response};
 
 struct Network {
     peers: Arc<Mutex<HashMap<String, NodeClient<Channel>>>>,
@@ -90,6 +90,7 @@ impl Node for Network {
         &self,
         request: tonic::Request<Transaction>,
     ) -> std::result::Result<tonic::Response<Ack>, tonic::Status> {
+        log::debug!("{:?}", request);
         todo!()
     }
 

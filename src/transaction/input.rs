@@ -1,8 +1,10 @@
+use serde::{Deserialize, Serialize};
+
 use crate::crypto::hash_utils::HashResult;
 
 use super::script::Script;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Input {
     pub prev_tx_hash: HashResult,
     pub prev_tx_output_index: u32,

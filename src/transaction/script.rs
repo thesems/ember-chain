@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use serde::{Deserialize, Serialize};
+
 use crate::crypto::{
     hash_utils::{sha256, HashResult},
     signature::verify,
@@ -7,7 +9,7 @@ use crate::crypto::{
 
 type StackItem = Vec<u8>;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum Operation {
     True = 81,
     Nop = 97,
@@ -20,13 +22,13 @@ pub enum Operation {
     CheckSig = 172,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Item {
     Data(StackItem),
     Operation(Operation),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Script {
     pub items: Vec<Item>,
 }

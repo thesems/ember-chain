@@ -21,7 +21,7 @@ pub struct Blockchain {
     // dependencies
     database: Arc<Mutex<DatabaseType>>,
     server: Arc<Server>,
-    account: Arc<Account>,
+    _account: Arc<Account>,
     miner: Miner,
     // other
     config: Config,
@@ -50,7 +50,7 @@ impl Blockchain {
             server: Arc::new(Server::new(transactions_tx, database.clone())),
             database,
             miner: Miner::new(config.mining.clone(), account.clone()),
-            account,
+            _account: account,
             transactions_rx: Arc::new(Mutex::new(transactions_rx)),
             current_block_reward: config.mining.mining_reward,
             config,

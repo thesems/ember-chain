@@ -1,4 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use serde::{Deserialize, Serialize};
 
 use crate::{
     crypto::{
@@ -15,14 +17,19 @@ use super::{
     script::{Item, Operation, Script, ScriptRunner},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
+    pub sender: Vec<u8>,
     inputs: Vec<Input>,
     outputs: Vec<Output>,
 }
 impl Transaction {
-    pub fn new(inputs: Vec<Input>, outputs: Vec<Output>) -> Self {
-        Self { inputs, outputs }
+    pub fn new(sender: Vec<u8>, inputs: Vec<Input>, outputs: Vec<Output>) -> Self {
+        Self {
+            sender,
+            inputs,
+            outputs,
+        }
     }
     pub fn get_amount(&self, output_index: u32) -> Option<u64> {
         if let Some(output) = self.outputs.get(output_index as usize) {
@@ -42,7 +49,7 @@ impl Transaction {
             if input.prev_tx_hash == [0u8; 32] && input.prev_tx_output_index == 0 {
                 // coinbase transaction
                 total_input += current_block_reward;
-                
+
                 if self.inputs.len() > 1 {
                     log::error!("Coinbase transaction can only have a single input.");
                     return false;
@@ -98,8 +105,16 @@ impl Transaction {
 
         true
     }
+    /// Creates a coinbase transaction, which contains the block reward.
+    ///
+    /// Parameters
+    ///
+    /// - reward: amount of block reward in satoshis
+    /// - pub_key: public key of the receiver
+    ///
     pub fn create_coinbase(reward: Satoshi, pub_key: Vec<u8>) -> Transaction {
         Transaction::new(
+            [0u8; 32].to_vec(),
             vec![Input::new(
                 [0u8; 32],
                 0,
@@ -108,20 +123,36 @@ impl Transaction {
             vec![Output::new(
                 reward,
                 Script::new(vec![
-                    Item::Data(pub_key),
+                    Item::Data(pub_key.clone()),
                     Item::Operation(Operation::Dup),
                     Item::Operation(Operation::Equal),
                 ]),
+                pub_key,
             )],
         )
     }
+    /// Creates a pay-to-public-key transaction.
+    /// This is the bread-and-butter of the transaction system.
+    ///
+    /// Parameters
+    ///
+    /// - prev_tx_hash: Transaction hash of the transaction that contains the output to be spent
+    /// - prev_tx_output_index: Index of the spendable output of the transaction
+    /// - amount: Amount to be spent. Rest will be taken as miner fee.
+    /// - account: Receiver's public key used for unlocking the funds.
+    ///
+    /// TODO:
+    /// - Currently only a single input can be spent. Multiple inputs should be spendable.
+    ///
     pub fn create_pay_to_pubkey_hash(
         prev_tx_hash: HashResult,
         prev_tx_output_index: u32,
         amount: u64,
         account: &Account,
+        rx_pub_key: &[u8],
     ) -> Transaction {
         let mut tx = Transaction::new(
+            account.public_key().to_vec(),
             vec![Input::new(
                 prev_tx_hash,
                 prev_tx_output_index,
@@ -132,10 +163,11 @@ impl Transaction {
                 Script::new(vec![
                     Item::Operation(Operation::Dup),
                     Item::Operation(Operation::Hash256),
-                    Item::Data(account.public_key().to_vec()),
+                    Item::Data(rx_pub_key.to_vec()),
                     Item::Operation(Operation::EqualVerify),
                     Item::Operation(Operation::CheckSig),
                 ]),
+                rx_pub_key.to_vec(),
             )],
         );
         let tx_hash = tx.hash();
@@ -154,5 +186,18 @@ impl Transaction {
             bytes.append(&mut output.hash().clone());
         }
         sha256(&bytes)
+    }
+    /// Adds all otputs (UTXOs) from the transactions.
+    ///
+    /// Parameters
+    ///
+    /// - database: Stores UTXOs in a some database 
+    ///
+    pub fn add_utxos(&self, database: &mut MutexGuard<'_, DatabaseType>) {
+        let tx_hash = self.hash();
+
+        for i in 0..self.outputs.len() {
+            database.add_utxo(tx_hash, i);
+        }
     }
 }

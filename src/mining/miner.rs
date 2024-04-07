@@ -54,6 +54,7 @@ impl Miner {
                 0,
                 coinbase_amount,
                 &self.account,
+                self.account.public_key(),
             ),
         ];
         txs.append(&mut transactions.to_vec());
@@ -61,7 +62,10 @@ impl Miner {
         {
             let mut db = database.lock().unwrap();
             for tx in txs.iter() {
-                db.add_transaction(tx.hash(), tx.clone());
+                let tx_hash = tx.hash();
+                db.add_transaction(tx_hash, tx.clone());
+                db.map_address_to_transaction_hash(&tx.sender, tx_hash);
+                tx.add_utxos(&mut db);
             }
         }
 

@@ -10,10 +10,14 @@ pub enum AccountError {
 }
 
 impl From<ring::error::Unspecified> for AccountError {
-    fn from(_: ring::error::Unspecified) -> Self { AccountError::CryptoError }
+    fn from(_: ring::error::Unspecified) -> Self {
+        AccountError::CryptoError
+    }
 }
 impl From<ring::error::KeyRejected> for AccountError {
-    fn from(_: ring::error::KeyRejected) -> Self { AccountError::CryptoError }
+    fn from(_: ring::error::KeyRejected) -> Self {
+        AccountError::CryptoError
+    }
 }
 
 pub struct Account {
@@ -25,6 +29,15 @@ impl Account {
         let rng = rand::SystemRandom::new();
         let pkcs8_bytes = signature::Ed25519KeyPair::generate_pkcs8(&rng)?;
         let key_pair = signature::Ed25519KeyPair::from_pkcs8(pkcs8_bytes.as_ref())?;
+
+        let pb = key_pair
+            .public_key()
+            .as_ref()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
+
+        log::info!("Generated a new account. Public key: {:x?}", pb);
 
         Ok(Account { key_pair })
     }

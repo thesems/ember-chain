@@ -40,10 +40,10 @@ pub trait Database {
     fn get_transaction(&mut self, tx_hash: HashResult) -> Option<&Transaction>;
 
     /// Maps a public key address to a transaction hash
-    fn map_address_to_transaction_hash(&mut self, address: Vec<u8>, tx_hash: HashResult);
+    fn map_address_to_transaction_hash(&mut self, address: &[u8], tx_hash: HashResult);
 
     /// Maps a public key address to a transaction hash
-    fn get_transaction_hashes(&mut self, address: Vec<u8>) -> &[HashResult];
+    fn get_transaction_hashes(&mut self, address: &[u8]) -> &[HashResult];
 
     fn add_pending_transaction(&mut self, transaction: Transaction);
 
