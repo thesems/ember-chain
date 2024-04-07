@@ -5,12 +5,12 @@ Ember-chain is a blockchain inspired by bitcoin. It is implemented in rust and s
 
 ## Roadmap
 
+Due to being a study project, the following features will be implemented in their minimal form necessary to be useful.
+
 **Features:**
+
 - [x] Proof-of-Work block mining
 - [x] Crypto accounts
 - [x] Transactions with inputs, outputs, scripts.
 - [x] Block/transaction verifiers
-- [ ] Web API for querying data and interaction
-- [ ] CLI-based wallet
-- [ ] P2P module for exchanging data
-- [ ] Consensus/fork logic
+- [x] Web API for querying data and interaction
