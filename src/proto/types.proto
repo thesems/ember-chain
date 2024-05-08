@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package proto_node;
+
+service Node {
+    rpc Handshake(Version) returns (Version);
+    rpc GetPeerList(None) returns (PeerList);
+    rpc AddBlock(Block) returns (Ack);
+    rpc GetBlock(BlockHeight) returns (Block);
+    rpc AddTransaction(Transaction) returns (Ack);
+}
+
+message None {}
+message Ack {}
+
+message BlockHeight {
+    int32 blockHeight = 1;
+}
+
+message Version {
+    string version = 1;
+    int32 blockHeight = 2;
+}
+
+message Block {
+    Header header = 1;
+    repeated Transaction transactions = 2;
+}
+
+message Header {
+    string message = 1;
+}
+
+message Transaction {
+    string message = 1;
+}
+
+message PeerList {
+    repeated string peers = 1;
+}

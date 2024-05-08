@@ -12,8 +12,21 @@ pub struct MiningConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct SimulationConfig {
+    pub fake_mining: bool,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct NetworkConfig {
+    pub port: u16,
+    pub seed_list: Vec<String>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub mining: MiningConfig,
+    pub simulation: SimulationConfig,
+    pub network: NetworkConfig,
 }
 
 #[derive(Deserialize, Clone, Debug)]

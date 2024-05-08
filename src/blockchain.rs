@@ -5,6 +5,7 @@ use crate::{
     crypto::account::{Account, AccountError},
     database::{database::DatabaseType, InMemoryDatabase},
     mining::miner::Miner,
+    network::node::start_network_node,
     transaction::Transaction,
     types::Satoshi,
 };
@@ -14,6 +15,7 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use tokio::runtime::Runtime;
 
 pub struct Blockchain {
     // dependencies
@@ -61,7 +63,12 @@ impl Blockchain {
         });
 
         let tx_recv = self.transactions_rx.clone();
-        let mut pen_txs = self.database.lock().unwrap().get_pending_transactions().to_vec();
+        let mut pen_txs = self
+            .database
+            .lock()
+            .unwrap()
+            .get_pending_transactions()
+            .to_vec();
 
         thread::scope(|s| {
             s.spawn(|| loop {
@@ -73,6 +80,16 @@ impl Blockchain {
                         todo!()
                     }
                 }
+            });
+            let db = self.database.clone();
+            let port = self.config.network.port;
+            s.spawn(move || {
+                let rt = Runtime::new().unwrap();
+                rt.block_on(async {
+                    if start_network_node(port, db).await.is_err() {
+                        log::warn!("☠☠ network node crashed ☠☠");
+                    }
+                })
             });
 
             self.add_genesis_block();
@@ -145,30 +162,39 @@ impl Blockchain {
     }
     fn get_next_block(&mut self) -> Block {
         let start = Instant::now();
-        let txs = self.database.lock().unwrap().get_pending_transactions().to_vec();
+        let txs = self
+            .database
+            .lock()
+            .unwrap()
+            .get_pending_transactions()
+            .to_vec();
 
         let prev_block_hash = match self.database.lock().unwrap().head() {
             Some(block) => block.hash,
             None => [0u8; 32],
         };
         let mut final_block = Block::default();
-        let mut hash_count = 0;
 
         let (mining_tx, mining_rx) = unbounded::<Block>();
         let (mining_cancel_tx, mining_cancel_rx) = unbounded::<()>();
         let (net_tx, net_rx) = unbounded::<Block>();
         let (net_cancel_tx, net_cancel_rx) = unbounded::<()>();
 
+        let mut hash_count = 0;
+
         thread::scope(|s| {
             s.spawn(|| {
-                if let Some(block) = self.miner.mine(
+                let block: Option<Block>;
+                (block, hash_count) = self.miner.mine(
                     &self.database,
                     &txs,
                     mining_cancel_rx,
-                    &mut hash_count,
                     prev_block_hash,
                     self.current_block_reward,
-                ) {
+                    self.config.simulation.fake_mining,
+                );
+
+                if let Some(block) = block {
                     mining_tx.send(block).unwrap();
                 }
             });
@@ -180,12 +206,12 @@ impl Blockchain {
             final_block = select! {
                 recv(mining_rx) -> my_block => {
                     log::info!("★★★ You successfully mined a block! ★★★");
-                    net_cancel_tx.send(()).unwrap();
+                    _ = net_cancel_tx.send(());
                     my_block.unwrap()
                 }
                 recv(net_rx) -> other_block => {
                     log::info!("A participant has mined a block!");
-                    mining_cancel_tx.send(()).unwrap();
+                    _ =mining_cancel_tx.send(());
                     other_block.unwrap()
                 }
             };

@@ -1,17 +1,25 @@
 use std::{
-    collections::VecDeque, sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crossbeam::channel::Receiver;
 
 use crate::{
-    block::{Block, BlockHeader}, config::models::MiningConfig, crypto::{account::Account, hash_utils::HashResult, merkle_tree::generate_merkle_root}, database::database::DatabaseType, mining::pow_utils::proof_of_work, transaction::Transaction, types::Satoshi
+    block::{Block, BlockHeader},
+    config::models::MiningConfig,
+    crypto::{account::Account, hash_utils::HashResult, merkle_tree::generate_merkle_root},
+    database::database::DatabaseType,
+    mining::pow_utils::proof_of_work,
+    transaction::Transaction,
+    types::Satoshi,
 };
 
 pub struct Miner {
     config: MiningConfig,
     difficulty: u8,
-    hash_per_secs: f64,
+    last_hash_count: u32,
     account: Arc<Account>,
     last_mining_times: VecDeque<f64>,
 }
@@ -20,7 +28,7 @@ impl Miner {
     pub fn new(config: MiningConfig, account: Arc<Account>) -> Self {
         Self {
             difficulty: config.start_difficulty_bit,
-            hash_per_secs: 0.0,
+            last_hash_count: 0,
             last_mining_times: VecDeque::with_capacity(config.block_adjustment_interval),
             account,
             config,
@@ -32,11 +40,10 @@ impl Miner {
         database: &Arc<Mutex<DatabaseType>>,
         transactions: &[Transaction],
         cancel_mine_rx: Receiver<()>,
-        hash_count: &mut u64,
         prev_block_hash: HashResult,
         reward: Satoshi,
-    ) -> Option<Block> {
-
+        fake_mining: bool,
+    ) -> (Option<Block>, u32) {
         let coinbase = Transaction::create_coinbase(reward, self.account.public_key().to_vec());
         let coinbase_hash = coinbase.hash();
         let coinbase_amount = coinbase.get_amount(0).unwrap_or(0);
@@ -69,16 +76,18 @@ impl Miner {
         let mut block_header =
             BlockHeader::from(merkle_root, prev_block_hash, self.difficulty, timestamp);
 
+        let mut hash_count = 0u32;
         if let Some(block_hash) = proof_of_work(
             self.difficulty,
             &mut block_header,
             cancel_mine_rx,
-            hash_count,
+            &mut hash_count,
+            fake_mining,
         ) {
             let block = Block::new(block_header, txs, block_hash);
-            return Some(block);
+            return (Some(block), hash_count);
         }
-        None
+        (None, hash_count)
     }
 
     pub fn adjust_difficulty(&mut self) {
@@ -107,12 +116,16 @@ impl Miner {
         );
     }
 
-    pub fn add_mining_time(&mut self, duration: Duration, hash_count: u64) {
+    pub fn add_mining_time(&mut self, duration: Duration, hash_count: u32) {
+        self.last_hash_count = hash_count;
         if self.last_mining_times.len() >= self.config.block_adjustment_interval {
             self.last_mining_times.pop_front();
         }
         self.last_mining_times.push_back(duration.as_secs_f64());
-        self.hash_per_secs = (hash_count as f64 / duration.as_millis() as f64) * 1000.0;
-        log::debug!("Average hash per second: {:.2}", self.hash_per_secs);
+    }
+    pub fn get_hash_count(&self, block_duration: Duration) {
+        let hash_per_secs =
+            (self.last_hash_count as f64 / block_duration.as_millis() as f64) * 1000.0;
+        log::debug!("Average hashes per second: {:.2}", hash_per_secs);
     }
 }

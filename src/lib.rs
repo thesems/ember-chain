@@ -1,9 +1,11 @@
-pub mod blockchain;
-pub mod block;
 pub mod api;
-pub mod mining;
-pub mod database;
-pub mod crypto;
-pub mod transaction;
+pub mod block;
+pub mod blockchain;
 pub mod config;
+pub mod crypto;
+pub mod database;
+pub mod mining;
+pub mod network;
+pub mod proto;
+pub mod transaction;
 pub mod types;

@@ -1,5 +1,10 @@
+use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use crossbeam::channel::{Receiver, TryRecvError};
 use ethnum::U256;
+use rand::prelude::*;
+use rand::Rng;
 
 use crate::{block::block_header::BlockHeader, crypto::hash_utils::HashResult};
 
@@ -14,24 +19,42 @@ pub fn compare_difficulty(target: U256, hash_int: U256) -> bool {
     false
 }
 
+/// Mines a block for a given difficulty.
+///
 pub fn proof_of_work(
     difficulty: u8,
     block: &mut BlockHeader,
     cancel_mine_rx: Receiver<()>,
-    hash_count: &mut u64,
+    hash_count: &mut u32,
+    fake_mining: bool,
 ) -> Option<HashResult> {
     let mut block_hash = block.finalize();
     let target = target_from_difficulty_bit(difficulty);
+    let time_started = Instant::now();
+
+    let mut seed = [0u8; 32];
+    let now_since_epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let elapsed_time_bytes = now_since_epoch.as_micros().to_le_bytes();
+    seed[0..16].copy_from_slice(&elapsed_time_bytes);
+    let mut rng = StdRng::from_seed(seed);
+    let wait_secs = rng.gen_range(8..15);
 
     for i in 0..u32::MAX {
-        let hash_int = U256::from_be_bytes(block_hash);
-        if compare_difficulty(target, hash_int) {
-            return Some(block_hash);
-        }
+        if !fake_mining {
+            let hash_int = U256::from_be_bytes(block_hash);
+            if compare_difficulty(target, hash_int) {
+                return Some(block_hash);
+            }
 
-        block.nonce = i;
-        block_hash = block.finalize();
-        *hash_count += 1;
+            block.nonce = i;
+            block_hash = block.finalize();
+            *hash_count += 1;
+        } else {
+            std::thread::sleep(Duration::from_millis(1));
+            if time_started.elapsed().as_secs() >= wait_secs {
+                return Some(block_hash);
+            }
+        }
 
         if i % 10000 == 0 {
             match cancel_mine_rx.try_recv() {
