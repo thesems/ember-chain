@@ -1,2 +1,2 @@
-private_key="priv123"
-public_key="pub123"
+[account]
+keys_path = "./configs/keys.pkcs8"

@@ -9,3 +9,5 @@ fake_mining = true
 [network]
 port = 50051
 seed_list = ["[::]:1337"]
+[account]
+keys_path = "./configs/keys.pkcs8"

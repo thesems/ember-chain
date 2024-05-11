@@ -9,3 +9,4 @@ pub mod network;
 pub mod proto;
 pub mod transaction;
 pub mod types;
+pub mod wallet;

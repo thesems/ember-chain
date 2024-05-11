@@ -43,8 +43,9 @@ impl From<AccountError> for BlockchainError {
 impl Blockchain {
     pub fn new(config: Config) -> Result<Self, BlockchainError> {
         let (transactions_tx, transactions_rx) = unbounded::<Transaction>();
-        let account = Arc::new(Account::new()?);
+        let account = Arc::new(Account::load_or_create(config.account.clone())?);
         let database = Arc::new(Mutex::new(InMemoryDatabase::default()));
+
         Ok(Self {
             running: true,
             server: Arc::new(Server::new(transactions_tx, database.clone())),

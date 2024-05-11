@@ -23,14 +23,19 @@ pub struct NetworkConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct AccountConfig {
+    pub keys_path: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub mining: MiningConfig,
     pub simulation: SimulationConfig,
     pub network: NetworkConfig,
+    pub account: AccountConfig,
 }
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct WalletConfig {
-    pub private_key: String,
-    pub public_key: String,
+    pub account: AccountConfig,
 }
