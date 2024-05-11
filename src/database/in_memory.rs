@@ -33,7 +33,6 @@ impl Default for InMemoryDatabase {
 impl Database for InMemoryDatabase {
     fn insert_block(&mut self, block: Block) {
         let block_height = self.block_height();
-        log::debug!("Block ({}): {:?}", block_height, block);
 
         for tx in block.transactions.iter() {
             self.add_transaction(tx.hash(), tx.clone());

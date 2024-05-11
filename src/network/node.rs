@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 use crate::database::database::DatabaseType;
 use crate::proto::proto_node::node_client::NodeClient;
 use crate::proto::proto_node::node_server::{Node, NodeServer};
-use crate::proto::proto_node::{Ack, Block, BlockHeight, None, PeerList, Transaction, Version};
+use crate::proto::proto_node::{
+    Ack, Balance, Block, BlockHeight, None, PeerList, PublicKey, Transaction, Version,
+};
 
 use tonic::transport::Channel;
 use tonic::{transport::Server, Response};
@@ -108,6 +110,14 @@ impl Node for Network {
 
         let reply = PeerList { peers };
         Ok(Response::new(reply))
+    }
+
+    async fn get_balance(
+        &self,
+        request: tonic::Request<PublicKey>,
+    ) -> std::result::Result<tonic::Response<Balance>, tonic::Status> {
+        log::debug!("{:?}", request);
+        Ok(Response::new(Balance { balance: 12 }))
     }
 }
 

@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn test_load_save() {
         let config = AccountConfig {
-            keys_path: "./configs/keydata.pkcs8".to_string(),
+            keys_path: "./configs/keys_test.pkcs8".to_string(),
         };
         let account = Account::new(config.clone()).expect("Failed to create account.");
         assert!(account.save());
@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn test_sign_verify() {
         let config = AccountConfig {
-            keys_path: "./configs/keydata.pkcs8".to_string(),
+            keys_path: "./configs/keys_test.pkcs8".to_string(),
         };
         let account = Account::new(config).unwrap();
         let message = b"Fear is the mind-killer. I will face my fear. Only I will remain.";

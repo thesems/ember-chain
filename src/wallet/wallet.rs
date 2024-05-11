@@ -1,6 +1,9 @@
 use crate::config::models::WalletConfig;
 use crate::crypto::account::{Account, AccountError};
 use crate::proto::proto_node::node_client::NodeClient;
+use crate::proto::proto_node::{PublicKey, Version};
+use crate::wallet;
+use tokio::runtime::Runtime;
 use tonic::transport::Channel;
 
 #[derive(Debug)]
@@ -13,35 +16,39 @@ impl From<crate::crypto::account::AccountError> for WalletError {
     }
 }
 
-pub struct Wallet {
+pub struct Wallet<'a> {
+    rt: &'a Runtime,
     config: WalletConfig,
-    account: Option<Account>,
-    _client: Option<NodeClient<Channel>>,
+    account: Account,
+    client: Option<NodeClient<Channel>>,
 }
-impl Wallet {
-    pub fn new(config: WalletConfig) -> Result<Self, WalletError> {
+impl<'a> Wallet<'a> {
+    pub fn new(rt: &'a Runtime, config: WalletConfig) -> Result<Self, WalletError> {
         Ok(Wallet {
-            config,
-            account: None,
-            _client: None,
+            rt,
+            config: config.clone(),
+            account: Account::load_or_create(config.account.clone())?,
+            client: None,
         })
     }
 
-    /// Loads an account (public and private keys) into the wallet.
-    /// If the supplied file doesn't exist, it creates a new account.
-    pub fn load_account(&mut self) -> Result<(), AccountError> {
-        self.account = Some(match Account::load(self.config.account.clone()) {
-            Ok(acc) => acc,
-            Err(_) => {
-                let account = Account::new(self.config.account.clone())?;
-                account.save();
-                account
+    pub fn connect_node(&mut self, rpc_url: &str) {
+        self.rt.block_on(async {
+            let rpc_url: String = rpc_url.to_string();
+            if let Ok(client) = NodeClient::connect(rpc_url.clone()).await {
+                log::debug!("Connected to {}.", &rpc_url);
+                self.client = Some(client);
             }
-        });
-        Ok(())
+        })
     }
 
-    pub async fn connect_node(&self, _rpc_url: String) {
-        // if let Ok(client) = NodeClient::connect(rpc_url).await {}
+    pub fn query_balance(&mut self) {
+        let balance = self
+            .rt
+            .block_on(self.client.as_mut().unwrap().get_balance(PublicKey {
+                key: self.account.public_key().to_vec(),
+            }))
+            .unwrap();
+        log::info!("Balance = {}", balance.get_ref().balance);
     }
 }

@@ -38,4 +38,5 @@ pub struct Config {
 #[derive(Deserialize, Clone, Debug)]
 pub struct WalletConfig {
     pub account: AccountConfig,
+    pub rpc_url: String,
 }

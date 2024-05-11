@@ -8,6 +8,7 @@ service Node {
     rpc AddBlock(Block) returns (Ack);
     rpc GetBlock(BlockHeight) returns (Block);
     rpc AddTransaction(Transaction) returns (Ack);
+    rpc GetBalance(PublicKey) returns (Balance);
 }
 
 message None {}
@@ -37,4 +38,12 @@ message Transaction {
 
 message PeerList {
     repeated string peers = 1;
+}
+
+message PublicKey {
+    bytes key = 1;
+}
+
+message Balance {
+    int32 balance = 1;
 }

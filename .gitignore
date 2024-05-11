@@ -1,2 +1,3 @@
 /target
 .env
+/configs/*.pkcs8
