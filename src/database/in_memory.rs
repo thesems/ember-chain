@@ -8,7 +8,7 @@ pub struct InMemoryDatabase {
     blocks: Vec<Block>,
     pending_transactions: Vec<Transaction>,
     transactions: HashMap<HashResult, Transaction>,
-    unspent_outputs: HashSet<(HashResult, usize)>,
+    unspent_outputs: HashSet<(HashResult, u32)>,
     address_to_txs: HashMap<Vec<u8>, HashSet<HashResult>>,
 }
 
@@ -63,15 +63,15 @@ impl Database for InMemoryDatabase {
         self.blocks.last()
     }
 
-    fn add_utxo(&mut self, tx_hash: HashResult, output_index: usize) {
+    fn add_utxo(&mut self, tx_hash: HashResult, output_index: u32) {
         self.unspent_outputs.insert((tx_hash, output_index));
     }
 
-    fn remove_utxo(&mut self, tx_hash: &HashResult, output_index: usize) {
+    fn remove_utxo(&mut self, tx_hash: &HashResult, output_index: u32) {
         self.unspent_outputs.remove(&(*tx_hash, output_index));
     }
 
-    fn is_utxo(&self, tx_hash: &HashResult, output_index: usize) -> bool {
+    fn is_utxo(&self, tx_hash: &HashResult, output_index: u32) -> bool {
         self.unspent_outputs.contains(&(*tx_hash, output_index))
     }
 
@@ -124,7 +124,7 @@ impl Database for InMemoryDatabase {
         for hash in hashes.iter() {
             if let Some(tx) = self.get_transaction(hash) {
                 for (idx, output) in tx.outputs.iter().enumerate() {
-                    if output.receiver == address && self.is_utxo(hash, idx) {
+                    if output.receiver == address && self.is_utxo(hash, idx as u32) {
                         balance += output.value;
                     }
                 }

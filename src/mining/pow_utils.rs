@@ -19,6 +19,15 @@ pub fn compare_difficulty(target: U256, hash_int: U256) -> bool {
     false
 }
 
+pub fn get_random_range(min: u64, max: u64) -> u64 {
+    let mut seed = [0u8; 32];
+    let now_since_epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let elapsed_time_bytes = now_since_epoch.as_micros().to_le_bytes();
+    seed[0..16].copy_from_slice(&elapsed_time_bytes);
+    let mut rng = StdRng::from_seed(seed);
+    rng.gen_range(min..max)
+}
+
 /// Mines a block for a given difficulty.
 ///
 pub fn proof_of_work(
@@ -31,13 +40,7 @@ pub fn proof_of_work(
     let mut block_hash = block_header.finalize();
     let target = target_from_difficulty_bit(difficulty);
     let time_started = Instant::now();
-
-    let mut seed = [0u8; 32];
-    let now_since_epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    let elapsed_time_bytes = now_since_epoch.as_micros().to_le_bytes();
-    seed[0..16].copy_from_slice(&elapsed_time_bytes);
-    let mut rng = StdRng::from_seed(seed);
-    let wait_secs = rng.gen_range(8..15);
+    let wait_secs = get_random_range(8, 9);
 
     for i in 0..u32::MAX {
         if !fake_mining {
@@ -52,6 +55,8 @@ pub fn proof_of_work(
         } else {
             std::thread::sleep(Duration::from_millis(1));
             if time_started.elapsed().as_secs() >= wait_secs {
+                block_header.nonce = get_random_range(0, u32::MAX as u64) as u32;
+                block_hash = block_header.finalize();
                 return Some(block_hash);
             }
         }

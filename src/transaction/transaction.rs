@@ -8,6 +8,7 @@ use crate::{
         hash_utils::{sha256, HashResult},
     },
     database::database::DatabaseType,
+    mining::pow_utils::get_random_range,
     types::Satoshi,
 };
 
@@ -46,7 +47,7 @@ impl Transaction {
         let mut total_output = 0;
 
         for input in self.inputs.iter() {
-            if input.prev_tx_hash == [0u8; 32] && input.prev_tx_output_index == 0 {
+            if input.utxo_tx_hash == [0u8; 32] && input.utxo_output_index == 0 {
                 // coinbase transaction
                 total_input += current_block_reward;
 
@@ -61,9 +62,9 @@ impl Transaction {
             if let Some(tx) = database
                 .lock()
                 .unwrap()
-                .get_transaction(&input.prev_tx_hash)
+                .get_transaction(&input.utxo_tx_hash)
             {
-                if let Some(amount) = tx.get_amount(input.prev_tx_output_index) {
+                if let Some(amount) = tx.get_amount(input.utxo_output_index) {
                     total_input += amount;
                 } else {
                     log::error!(
@@ -96,10 +97,9 @@ impl Transaction {
             if let Some(prev_tx) = database
                 .lock()
                 .unwrap()
-                .get_transaction(&input.prev_tx_hash)
+                .get_transaction(&input.utxo_tx_hash)
             {
-                if let Some(prev_tx_output) =
-                    prev_tx.outputs.get(input.prev_tx_output_index as usize)
+                if let Some(prev_tx_output) = prev_tx.outputs.get(input.utxo_output_index as usize)
                 {
                     let mut script_runner = ScriptRunner::new(prev_tx.hash());
                     let mut items = input.script_sig.items.clone();
@@ -126,7 +126,10 @@ impl Transaction {
             vec![Input::new(
                 [0u8; 32],
                 0,
-                Script::new(vec![Item::Operation(Operation::Nop)]),
+                Script::new(vec![
+                    Item::Operation(Operation::Nop),
+                    Item::Data(get_random_range(0, u64::MAX).to_le_bytes().to_vec()),
+                ]),
             )],
             vec![Output::new(
                 reward,
@@ -195,17 +198,21 @@ impl Transaction {
         }
         sha256(&bytes)
     }
-    /// Adds all otputs (UTXOs) from the transactions.
+    /// Removes all UTXOs from inputs and adds all UTXOs from outputs.
     ///
     /// Parameters
     ///
     /// - database: Stores UTXOs in a some database
     ///
-    pub fn add_utxos(&self, database: &mut MutexGuard<'_, DatabaseType>) {
+    pub fn update_utxos(&self, database: &mut MutexGuard<'_, DatabaseType>) {
         let tx_hash = self.hash();
 
-        for i in 0..self.outputs.len() {
-            database.add_utxo(tx_hash, i);
+        for input in self.inputs.iter() {
+            database.remove_utxo(&input.utxo_tx_hash, input.utxo_output_index);
+        }
+
+        for output_index in 0..self.outputs.len() {
+            database.add_utxo(tx_hash, output_index as u32);
         }
     }
 }

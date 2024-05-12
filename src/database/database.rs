@@ -22,13 +22,13 @@ pub trait Database {
     /// - tx_hash: a HashResult of the transaction
     /// - output_index: index of the unspent output within the transacion
     ///
-    fn add_utxo(&mut self, tx_hash: HashResult, output_index: usize);
+    fn add_utxo(&mut self, tx_hash: HashResult, output_index: u32);
 
     /// Removes a spent transaction output (UTXO).
-    fn remove_utxo(&mut self, tx_hash: &HashResult, output_index: usize);
+    fn remove_utxo(&mut self, tx_hash: &HashResult, output_index: u32);
 
     /// Checks if a transaction output is unspent.
-    fn is_utxo(&self, tx_hash: &HashResult, output_index: usize) -> bool;
+    fn is_utxo(&self, tx_hash: &HashResult, output_index: u32) -> bool;
 
     /// Adds a transaction identified by its hash
     fn add_transaction(&mut self, tx_hash: HashResult, transaction: Transaction);

@@ -83,7 +83,7 @@ impl Miner {
                 for tx in txs.iter() {
                     let tx_hash = tx.hash();
                     db.add_transaction(tx_hash, tx.clone());
-                    tx.add_utxos(&mut db);
+                    tx.update_utxos(&mut db);
                     db.map_address_to_transaction_hash(&tx.sender, tx_hash);
                     for output in tx.outputs.iter() {
                         db.map_address_to_transaction_hash(&output.receiver, tx_hash);
