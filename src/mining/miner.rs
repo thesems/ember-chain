@@ -59,16 +59,6 @@ impl Miner {
         ];
         txs.append(&mut transactions.to_vec());
 
-        {
-            let mut db = database.lock().unwrap();
-            for tx in txs.iter() {
-                let tx_hash = tx.hash();
-                db.add_transaction(tx_hash, tx.clone());
-                db.map_address_to_transaction_hash(&tx.sender, tx_hash);
-                tx.add_utxos(&mut db);
-            }
-        }
-
         let tx_hashes = txs.iter().map(|x| x.hash()).collect();
         let merkle_root = generate_merkle_root(tx_hashes);
 
@@ -88,6 +78,19 @@ impl Miner {
             &mut hash_count,
             fake_mining,
         ) {
+            {
+                let mut db = database.lock().unwrap();
+                for tx in txs.iter() {
+                    let tx_hash = tx.hash();
+                    db.add_transaction(tx_hash, tx.clone());
+                    tx.add_utxos(&mut db);
+                    db.map_address_to_transaction_hash(&tx.sender, tx_hash);
+                    for output in tx.outputs.iter() {
+                        db.map_address_to_transaction_hash(&output.receiver, tx_hash);
+                    }
+                }
+            }
+
             let block = Block::new(block_header, txs, block_hash);
             return (Some(block), hash_count);
         }

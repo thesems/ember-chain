@@ -54,8 +54,8 @@ pub struct PublicKey {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Balance {
-    #[prost(int32, tag = "1")]
-    pub balance: i32,
+    #[prost(uint64, tag = "1")]
+    pub balance: u64,
 }
 /// Generated client implementations.
 pub mod node_client {

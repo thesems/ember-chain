@@ -27,7 +27,7 @@ impl BlockHeader {
             nonce: 0,
         }
     }
-    pub fn finalize(&mut self) -> HashResult {
+    pub fn finalize(&self) -> HashResult {
         let mut hasher = Sha256::new();
         hasher.update(self.as_bytes());
         hasher.finalize().into()

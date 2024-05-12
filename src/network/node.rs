@@ -116,8 +116,10 @@ impl Node for Network {
         &self,
         request: tonic::Request<PublicKey>,
     ) -> std::result::Result<tonic::Response<Balance>, tonic::Status> {
-        log::debug!("{:?}", request);
-        Ok(Response::new(Balance { balance: 12 }))
+        // log::debug!("{:?}", request);
+        let address = &request.get_ref().key;
+        let balance = self.database.lock().unwrap().get_balance(address);
+        Ok(Response::new(Balance { balance }))
     }
 }
 

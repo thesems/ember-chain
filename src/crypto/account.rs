@@ -59,7 +59,7 @@ impl Account {
     /// Attempts to load the private and public keys from the configured location.
     pub fn load(config: AccountConfig) -> Result<Self, AccountError> {
         if let Ok(key_data) = fs::read(&config.keys_path) {
-            log::info!("Loaded the account data from: {}.", &config.keys_path);
+            log::info!("Loaded the account data from: {}", &config.keys_path);
             return Ok(Account {
                 config: config,
                 pkcs8_data: key_data.to_vec(),
@@ -73,10 +73,10 @@ impl Account {
     /// Returns a boolean on success or failure.
     pub fn save(&self) -> bool {
         if fs::write(&self.config.keys_path, &self.pkcs8_data).is_err() {
-            log::error!("Failed to write key data to {}.", &self.config.keys_path);
+            log::error!("Failed to write key data to {}", &self.config.keys_path);
             return false;
         }
-        log::info!("Saved the account data to: {}.", &self.config.keys_path);
+        log::info!("Saved the account data to: {}", &self.config.keys_path);
         true
     }
 

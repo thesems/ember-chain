@@ -2,7 +2,10 @@ use crate::{
     api::server::Server,
     block::{block_header::BlockHeader, Block},
     config::models::Config,
-    crypto::account::{Account, AccountError},
+    crypto::{
+        account::{Account, AccountError},
+        merkle_tree::generate_merkle_root,
+    },
     database::{database::DatabaseType, InMemoryDatabase},
     mining::miner::Miner,
     network::node::start_network_node,
@@ -21,7 +24,7 @@ pub struct Blockchain {
     // dependencies
     database: Arc<Mutex<DatabaseType>>,
     server: Arc<Server>,
-    _account: Arc<Account>,
+    account: Arc<Account>,
     miner: Miner,
     // other
     config: Config,
@@ -51,7 +54,7 @@ impl Blockchain {
             server: Arc::new(Server::new(transactions_tx, database.clone())),
             database,
             miner: Miner::new(config.mining.clone(), account.clone()),
-            _account: account,
+            account,
             transactions_rx: Arc::new(Mutex::new(transactions_rx)),
             current_block_reward: config.mining.mining_reward,
             config,
@@ -121,14 +124,33 @@ impl Blockchain {
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards.");
 
-        self.database.lock().unwrap().insert_block(Block {
-            header: BlockHeader::from([0u8; 32], [0u8; 32], 0, time.as_secs()),
-            transactions: vec![Transaction::create_coinbase(
-                self.config.mining.mining_reward,
-                [0u8; 32].to_vec(),
-            )],
-            hash: [0u8; 32],
-        });
+        let txs = vec![Transaction::create_coinbase(
+            self.config.mining.mining_reward,
+            self.account.public_key().to_vec(),
+        )];
+        let tx_hashes = txs.iter().map(|x| x.hash()).collect();
+        let merkle_root = generate_merkle_root(tx_hashes);
+
+        let header = BlockHeader::from(merkle_root, [0u8; 32], 0, time.as_secs());
+        let block_hash = header.finalize();
+
+        let mut db = self.database.lock().unwrap();
+        for tx in txs.iter() {
+            let tx_hash = tx.hash();
+            db.add_transaction(tx_hash, tx.clone());
+            tx.add_utxos(&mut db);
+            db.map_address_to_transaction_hash(&tx.sender, tx_hash);
+            for output in tx.outputs.iter() {
+                db.map_address_to_transaction_hash(&output.receiver, tx_hash);
+            }
+        }
+
+        let block = Block {
+            header,
+            transactions: txs,
+            hash: block_hash,
+        };
+        db.insert_block(block);
     }
     fn recv_block(&self, net_cancel_recv: Receiver<()>) -> Block {
         let mut sleep_time = 0;
@@ -212,7 +234,7 @@ impl Blockchain {
                 }
                 recv(net_rx) -> other_block => {
                     log::info!("A participant has mined a block!");
-                    _ =mining_cancel_tx.send(());
+                    _ = mining_cancel_tx.send(());
                     other_block.unwrap()
                 }
             };

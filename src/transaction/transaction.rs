@@ -20,8 +20,8 @@ use super::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
     pub sender: Vec<u8>,
-    inputs: Vec<Input>,
-    outputs: Vec<Output>,
+    pub inputs: Vec<Input>,
+    pub outputs: Vec<Output>,
 }
 impl Transaction {
     pub fn new(sender: Vec<u8>, inputs: Vec<Input>, outputs: Vec<Output>) -> Self {
@@ -58,7 +58,11 @@ impl Transaction {
                 continue;
             }
 
-            if let Some(tx) = database.lock().unwrap().get_transaction(input.prev_tx_hash) {
+            if let Some(tx) = database
+                .lock()
+                .unwrap()
+                .get_transaction(&input.prev_tx_hash)
+            {
                 if let Some(amount) = tx.get_amount(input.prev_tx_output_index) {
                     total_input += amount;
                 } else {
@@ -89,7 +93,11 @@ impl Transaction {
     }
     pub fn verify_inputs(&self, database: &Arc<Mutex<DatabaseType>>) -> bool {
         for input in &self.inputs {
-            if let Some(prev_tx) = database.lock().unwrap().get_transaction(input.prev_tx_hash) {
+            if let Some(prev_tx) = database
+                .lock()
+                .unwrap()
+                .get_transaction(&input.prev_tx_hash)
+            {
                 if let Some(prev_tx_output) =
                     prev_tx.outputs.get(input.prev_tx_output_index as usize)
                 {
@@ -191,7 +199,7 @@ impl Transaction {
     ///
     /// Parameters
     ///
-    /// - database: Stores UTXOs in a some database 
+    /// - database: Stores UTXOs in a some database
     ///
     pub fn add_utxos(&self, database: &mut MutexGuard<'_, DatabaseType>) {
         let tx_hash = self.hash();

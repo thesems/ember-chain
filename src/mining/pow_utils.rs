@@ -23,12 +23,12 @@ pub fn compare_difficulty(target: U256, hash_int: U256) -> bool {
 ///
 pub fn proof_of_work(
     difficulty: u8,
-    block: &mut BlockHeader,
+    block_header: &mut BlockHeader,
     cancel_mine_rx: Receiver<()>,
     hash_count: &mut u32,
     fake_mining: bool,
 ) -> Option<HashResult> {
-    let mut block_hash = block.finalize();
+    let mut block_hash = block_header.finalize();
     let target = target_from_difficulty_bit(difficulty);
     let time_started = Instant::now();
 
@@ -46,8 +46,8 @@ pub fn proof_of_work(
                 return Some(block_hash);
             }
 
-            block.nonce = i;
-            block_hash = block.finalize();
+            block_header.nonce = i;
+            block_hash = block_header.finalize();
             *hash_count += 1;
         } else {
             std::thread::sleep(Duration::from_millis(1));

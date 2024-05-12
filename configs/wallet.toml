@@ -1,3 +1,3 @@
-rpc_url = "[::]:1337"
+rpc_url = "http://[::1]:1337"
 [account]
-keys_path = "./configs/keys_wallet.pkcs8"
+keys_path = "./configs/keys.pkcs8"

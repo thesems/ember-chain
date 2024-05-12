@@ -9,7 +9,7 @@ pub struct InMemoryDatabase {
     pending_transactions: Vec<Transaction>,
     transactions: HashMap<HashResult, Transaction>,
     unspent_outputs: HashSet<(HashResult, usize)>,
-    address_to_txs: HashMap<Vec<u8>, Vec<HashResult>>,
+    address_to_txs: HashMap<Vec<u8>, HashSet<HashResult>>,
 }
 
 impl InMemoryDatabase {
@@ -38,13 +38,17 @@ impl Database for InMemoryDatabase {
             self.add_transaction(tx.hash(), tx.clone());
         }
 
-        self.blocks.push(block);
-
         if block_height == 0 {
             log::info!("★★★ GENESIS BLOCK ★★★");
         } else {
-            log::info!("Block added at height {}.", block_height);
+            log::info!(
+                "Block added at height {} with {} transactions.",
+                block_height,
+                block.transactions.len()
+            );
         }
+
+        self.blocks.push(block);
     }
 
     fn get_blocks(&self) -> &[Block] {
@@ -79,25 +83,25 @@ impl Database for InMemoryDatabase {
         self.transactions.remove(&tx_hash)
     }
 
-    fn get_transaction(&mut self, tx_hash: HashResult) -> Option<&Transaction> {
-        self.transactions.get(&tx_hash)
+    fn get_transaction(&self, tx_hash: &HashResult) -> Option<&Transaction> {
+        self.transactions.get(tx_hash)
     }
 
     fn map_address_to_transaction_hash(&mut self, address: &[u8], tx_hash: HashResult) {
         if let Some(hashes) = self.address_to_txs.get_mut(address) {
-            hashes.push(tx_hash);
+            hashes.insert(tx_hash);
         } else {
-            self.address_to_txs.insert(address.to_vec(), vec![tx_hash]);
+            let mut hash_set = HashSet::new();
+            hash_set.insert(tx_hash);
+            self.address_to_txs.insert(address.to_vec(), hash_set);
         }
     }
 
-    fn get_transaction_hashes(&mut self, address: &[u8]) -> &[HashResult] {
-        log::warn!("{:#?}", self.address_to_txs);
-
+    fn get_transaction_hashes(&self, address: &[u8]) -> Vec<HashResult> {
         if let Some(txs) = self.address_to_txs.get(address) {
-            txs
+            txs.into_iter().cloned().collect()
         } else {
-            &[]
+            vec![]
         }
     }
 
@@ -111,6 +115,22 @@ impl Database for InMemoryDatabase {
 
     fn clear_pending_transactions(&mut self) {
         self.pending_transactions.clear();
+    }
+
+    fn get_balance(&self, address: &[u8]) -> u64 {
+        let hashes = self.get_transaction_hashes(address);
+
+        let mut balance = 0;
+        for hash in hashes.iter() {
+            if let Some(tx) = self.get_transaction(hash) {
+                for (idx, output) in tx.outputs.iter().enumerate() {
+                    if output.receiver == address && self.is_utxo(hash, idx) {
+                        balance += output.value;
+                    }
+                }
+            }
+        }
+        balance
     }
 }
 

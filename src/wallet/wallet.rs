@@ -1,8 +1,7 @@
 use crate::config::models::WalletConfig;
-use crate::crypto::account::{Account, AccountError};
+use crate::crypto::account::Account;
 use crate::proto::proto_node::node_client::NodeClient;
-use crate::proto::proto_node::{PublicKey, Version};
-use crate::wallet;
+use crate::proto::proto_node::PublicKey;
 use tokio::runtime::Runtime;
 use tonic::transport::Channel;
 
@@ -18,7 +17,7 @@ impl From<crate::crypto::account::AccountError> for WalletError {
 
 pub struct Wallet<'a> {
     rt: &'a Runtime,
-    config: WalletConfig,
+    _config: WalletConfig,
     account: Account,
     client: Option<NodeClient<Channel>>,
 }
@@ -26,7 +25,7 @@ impl<'a> Wallet<'a> {
     pub fn new(rt: &'a Runtime, config: WalletConfig) -> Result<Self, WalletError> {
         Ok(Wallet {
             rt,
-            config: config.clone(),
+            _config: config.clone(),
             account: Account::load_or_create(config.account.clone())?,
             client: None,
         })
@@ -35,14 +34,24 @@ impl<'a> Wallet<'a> {
     pub fn connect_node(&mut self, rpc_url: &str) {
         self.rt.block_on(async {
             let rpc_url: String = rpc_url.to_string();
-            if let Ok(client) = NodeClient::connect(rpc_url.clone()).await {
-                log::debug!("Connected to {}.", &rpc_url);
-                self.client = Some(client);
+            match NodeClient::connect(rpc_url.clone()).await {
+                Ok(client) => {
+                    log::debug!("Connected to {}.", &rpc_url);
+                    self.client = Some(client);
+                }
+                Err(err) => {
+                    log::error!("Failed to connect to {}. Error: {}", &rpc_url, &err);
+                }
             }
         })
     }
 
     pub fn query_balance(&mut self) {
+        if self.client.is_none() {
+            log::warn!("You have to connect to the RPC node first!");
+            return;
+        }
+
         let balance = self
             .rt
             .block_on(self.client.as_mut().unwrap().get_balance(PublicKey {

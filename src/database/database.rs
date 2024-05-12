@@ -37,17 +37,20 @@ pub trait Database {
     fn remove_transaction(&mut self, tx_hash: HashResult) -> Option<Transaction>;
 
     /// Searches for a transaction given its hash
-    fn get_transaction(&mut self, tx_hash: HashResult) -> Option<&Transaction>;
+    fn get_transaction(&self, tx_hash: &HashResult) -> Option<&Transaction>;
 
     /// Maps a public key address to a transaction hash
     fn map_address_to_transaction_hash(&mut self, address: &[u8], tx_hash: HashResult);
 
     /// Maps a public key address to a transaction hash
-    fn get_transaction_hashes(&mut self, address: &[u8]) -> &[HashResult];
+    fn get_transaction_hashes(&self, address: &[u8]) -> Vec<HashResult>;
 
     fn add_pending_transaction(&mut self, transaction: Transaction);
 
     fn get_pending_transactions(&self) -> &[Transaction];
 
     fn clear_pending_transactions(&mut self);
+
+    /// Returns the balance associated with the publikc key address
+    fn get_balance(&self, address: &[u8]) -> u64;
 }

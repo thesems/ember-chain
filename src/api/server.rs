@@ -87,7 +87,7 @@ impl Server {
                 let mut tx_hash = [0u8; 32];
                 if hex::decode_to_slice(path_tokens[2], &mut tx_hash).is_err() {
                     create_response(400).to_string()
-                } else if let Some(tx) = self.database.lock().unwrap().get_transaction(tx_hash) {
+                } else if let Some(tx) = self.database.lock().unwrap().get_transaction(&tx_hash) {
                     let json = serde_json::to_string(tx).unwrap();
                     create_response_json(json)
                 } else {
