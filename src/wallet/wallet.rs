@@ -31,16 +31,18 @@ impl<'a> Wallet<'a> {
         })
     }
 
-    pub fn connect_node(&mut self, rpc_url: &str) {
+    pub fn connect_node(&mut self, rpc_url: &str) -> Result<(), tonic::transport::Error> {
         self.rt.block_on(async {
             let rpc_url: String = rpc_url.to_string();
             match NodeClient::connect(rpc_url.clone()).await {
                 Ok(client) => {
                     log::debug!("Connected to {}.", &rpc_url);
                     self.client = Some(client);
+                    Ok(())
                 }
                 Err(err) => {
                     log::error!("Failed to connect to {}. Error: {}", &rpc_url, &err);
+                    Err(err)
                 }
             }
         })

@@ -1,3 +1,5 @@
+use std::io::{self, stdout, Write};
+
 use clap::Parser;
 use dotenv::dotenv;
 use ember_chain::{
@@ -17,7 +19,7 @@ struct Args {
     )]
     config_path: String,
 
-    #[arg(short, long)]
+    #[arg(short, long, value_name = "start_console | query_balance")]
     action: String,
 }
 
@@ -29,6 +31,7 @@ fn load_config(config_path: &str) -> WalletConfig {
 
 #[derive(Debug)]
 enum Action {
+    StartConsole,
     QueryBalance,
     CreateTransaction,
     ConnectNode,
@@ -36,6 +39,7 @@ enum Action {
 impl Action {
     fn from(action: &str) -> Action {
         match action {
+            "start_console" => Action::StartConsole,
             "query_balance" => Action::QueryBalance,
             "create_transaction" => Action::CreateTransaction,
             "connect_node" => Action::ConnectNode,
@@ -44,8 +48,27 @@ impl Action {
     }
 }
 
+fn start_console(wallet: &mut Wallet) {
+    loop {
+        print!("(console) > ");
+        stdout().flush().unwrap();
+
+        let mut buff = String::new();
+        let _ = io::stdin().read_line(&mut buff);
+
+        let command = buff.trim();
+        match command {
+            "quit" => break,
+            "get_balance" => wallet.query_balance(),
+            _ => log::warn!("Command `{}` not found.", command),
+        }
+    }
+    log::info!("Exit console.");
+}
+
 fn run_action(wallet: &mut Wallet, action: Action) {
     match action {
+        Action::StartConsole => start_console(wallet),
         Action::QueryBalance => wallet.query_balance(),
         action => panic!("Unimplemented action {:?}", action),
     };
@@ -59,6 +82,9 @@ fn main() {
     let rt = Runtime::new().unwrap();
     let mut wallet = Wallet::new(&rt, config.clone()).unwrap();
 
-    wallet.connect_node(&config.rpc_url);
+    if wallet.connect_node(&config.rpc_url).is_err() {
+        return;
+    }
+
     run_action(&mut wallet, Action::from(cli.action.as_str()));
 }
