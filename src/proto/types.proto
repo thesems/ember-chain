@@ -3,47 +3,83 @@ syntax = "proto3";
 package proto_node;
 
 service Node {
-    rpc Handshake(Version) returns (Version);
-    rpc GetPeerList(None) returns (PeerList);
-    rpc AddBlock(Block) returns (Ack);
-    rpc GetBlock(BlockHeight) returns (Block);
-    rpc AddTransaction(Transaction) returns (Ack);
-    rpc GetBalance(PublicKey) returns (Balance);
+  // Exchanges basic information with an another node.
+  rpc Handshake(HandshakeMessage) returns (HandshakeMessage);
+
+  // Returns the list of currently connected peers.
+  rpc GetPeerList(None) returns (PeerList);
+
+  // Adds the block to the current block list.
+  rpc AddBlock(Block) returns (None);
+
+  // Gets the block by its block height or hash. If hash, set block height to 0.
+  rpc GetBlock(BlockReq) returns (Block);
+
+  // Gets the unspent balance of the public key.
+  rpc GetBalance(PublicKey) returns (Balance);
+
+  // Adds a transaction to the pending transactions.
+  rpc AddTransaction(Transaction) returns (None);
+
+  // Gets a transaction whether it is commited or pending.
+  rpc GetTransaction(TransactionReq) returns (Transaction);
+
+  // Gets a newly created transaction. Transaction is not added to the mem-pool it is missing a signature.
+  rpc GetUTXO(PublicKey) returns (UnspentOutputs);
 }
 
 message None {}
-message Ack {}
 
-message BlockHeight {
-    int32 blockHeight = 1;
-}
-
-message Version {
-    string version = 1;
-    int32 blockHeight = 2;
+message HandshakeMessage {
+  string version = 1;
+  uint32 block_height = 2;
 }
 
 message Block {
-    Header header = 1;
-    repeated Transaction transactions = 2;
+  Header header = 1;
+  repeated Transaction transactions = 2;
+}
+
+message BlockReq {
+  uint32 block_height = 1;
+  optional string block_hash = 2;
 }
 
 message Header {
-    string message = 1;
+  uint32 version = 1;
+  string previous_block_hash = 2;
+  string merkle_root = 3;
+  uint64 timestamp = 4;
+  uint32 difficulty = 5;
+  uint32 nonce = 6;
 }
 
 message Transaction {
-    string message = 1;
+  string tx_json = 1;
+}
+
+message TransactionReq {
+  string tx_hash = 1;
+}
+
+message UnspentOutput {
+  bytes previous_transaction_hash = 1;
+  uint32 previous_transaction_output_index = 2;
+  uint64 amount = 3;
+}
+
+message UnspentOutputs {
+  repeated UnspentOutput unspent_outputs = 1;
 }
 
 message PeerList {
-    repeated string peers = 1;
+  repeated string peers = 1;
 }
 
 message PublicKey {
-    bytes key = 1;
+  bytes key = 1;
 }
 
 message Balance {
-    uint64 balance = 1;
+  uint64 balance = 1;
 }

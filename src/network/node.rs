@@ -1,15 +1,19 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use tonic::{Request, Response, Status, transport::Server};
+use tonic::transport::Channel;
+
+use crate::crypto::hash_utils::Address;
 use crate::database::database::DatabaseType;
+use crate::proto::proto_node::{
+    Balance, Block, BlockReq, HandshakeMessage, None, PeerList, PublicKey, Transaction,
+    TransactionReq, UnspentOutput, UnspentOutputs,
+};
 use crate::proto::proto_node::node_client::NodeClient;
 use crate::proto::proto_node::node_server::{Node, NodeServer};
-use crate::proto::proto_node::{
-    Ack, Balance, Block, BlockHeight, None, PeerList, PublicKey, Transaction, Version,
-};
-
-use tonic::transport::Channel;
-use tonic::{transport::Server, Response};
+use crate::transaction::input::Input;
+use crate::transaction::output::Output;
 
 struct Network {
     peers: Arc<Mutex<HashMap<String, NodeClient<Channel>>>>,
@@ -28,12 +32,12 @@ impl Network {
 impl Node for Network {
     async fn handshake(
         &self,
-        request: tonic::Request<Version>,
-    ) -> std::result::Result<tonic::Response<Version>, tonic::Status> {
+        request: Request<HandshakeMessage>,
+    ) -> Result<Response<HandshakeMessage>, Status> {
         log::debug!("{:?}", &request);
 
         const VERSION: &str = env!("CARGO_PKG_VERSION");
-        let block_height = self.database.lock().unwrap().block_height() as i32;
+        let block_height = self.database.lock().unwrap().block_height() as u32;
 
         let our_version = semver::Version::parse(VERSION).unwrap();
         let their_version = semver::Version::parse(&request.get_ref().version);
@@ -52,7 +56,7 @@ impl Node for Network {
             )
         }
 
-        let reply = Version {
+        let reply = HandshakeMessage {
             version: VERSION.to_string(),
             block_height,
         };
@@ -72,34 +76,7 @@ impl Node for Network {
         Ok(Response::new(reply))
     }
 
-    async fn add_block(
-        &self,
-        request: tonic::Request<Block>,
-    ) -> std::result::Result<tonic::Response<Ack>, tonic::Status> {
-        log::debug!("{:?}", request);
-        todo!()
-    }
-
-    async fn get_block(
-        &self,
-        request: tonic::Request<BlockHeight>,
-    ) -> std::result::Result<tonic::Response<Block>, tonic::Status> {
-        log::debug!("{:?}", request);
-        todo!()
-    }
-
-    async fn add_transaction(
-        &self,
-        request: tonic::Request<Transaction>,
-    ) -> std::result::Result<tonic::Response<Ack>, tonic::Status> {
-        log::debug!("{:?}", request);
-        todo!()
-    }
-
-    async fn get_peer_list(
-        &self,
-        _request: tonic::Request<None>,
-    ) -> std::result::Result<tonic::Response<PeerList>, tonic::Status> {
+    async fn get_peer_list(&self, _request: Request<None>) -> Result<Response<PeerList>, Status> {
         let peers: Vec<String> = self
             .peers
             .lock()
@@ -112,14 +89,57 @@ impl Node for Network {
         Ok(Response::new(reply))
     }
 
-    async fn get_balance(
-        &self,
-        request: tonic::Request<PublicKey>,
-    ) -> std::result::Result<tonic::Response<Balance>, tonic::Status> {
-        // log::debug!("{:?}", request);
+    async fn add_block(&self, request: Request<Block>) -> Result<Response<None>, Status> {
+        log::debug!("{:?}", request);
+        todo!()
+    }
+
+    async fn get_block(&self, request: Request<BlockReq>) -> Result<Response<Block>, Status> {
+        log::debug!("{:?}", request);
+        todo!()
+    }
+
+    async fn get_balance(&self, request: Request<PublicKey>) -> Result<Response<Balance>, Status> {
         let address = &request.get_ref().key;
         let balance = self.database.lock().unwrap().get_balance(address);
         Ok(Response::new(Balance { balance }))
+    }
+
+    async fn add_transaction(
+        &self,
+        request: Request<Transaction>,
+    ) -> Result<Response<None>, Status> {
+        let inputs: Vec<Input> = vec![];
+        let outputs: Vec<Output> = vec![];
+        // self.database.lock().unwrap().add_pending_transaction(
+        //     crate::transaction::Transaction::new(request.get_ref().sender.clone(), inputs, outputs),
+        // );
+        Ok(Response::new(None {}))
+    }
+
+    async fn get_transaction(
+        &self,
+        request: Request<TransactionReq>,
+    ) -> Result<Response<Transaction>, Status> {
+        log::debug!("{:?}", request);
+        todo!()
+    }
+
+    async fn get_utxo(
+        &self,
+        request: Request<PublicKey>,
+    ) -> Result<Response<UnspentOutputs>, Status> {
+        let public_key = request.into_inner().key as Address;
+        let utxos = self.database.lock().unwrap().get_utxo(&public_key);
+        let mut unspent_outputs = vec![];
+        for utxo in &utxos {
+            unspent_outputs.push(UnspentOutput {
+                previous_transaction_hash: utxo.0.to_vec(),
+                previous_transaction_output_index: utxo.1,
+                amount: utxo.2,
+            });
+        }
+        Ok(Response::new(UnspentOutputs { unspent_outputs }))
     }
 }
 

@@ -24,7 +24,7 @@ pub enum Operation {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Item {
-    Data(StackItem),
+    Data(StackItem, Option<String>),
     Operation(Operation),
 }
 
@@ -40,7 +40,7 @@ impl Script {
         let mut result = vec![];
         for item in self.items.iter() {
             match item {
-                Item::Data(data) => data.iter().for_each(|x| result.push(*x)),
+                Item::Data(data, _) => data.iter().for_each(|x| result.push(*x)),
                 Item::Operation(op) => result.push(*op as u8),
             }
         }
@@ -62,7 +62,7 @@ impl ScriptRunner {
     pub fn execute_script(&mut self, items: Vec<Item>) -> bool {
         for item in items {
             match item {
-                Item::Data(data) => self.push_stack(data),
+                Item::Data(data, _) => self.push_stack(data),
                 Item::Operation(op) => {
                     if !self.execute_operation(op) {
                         return false;

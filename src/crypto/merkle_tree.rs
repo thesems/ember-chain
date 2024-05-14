@@ -3,7 +3,6 @@
 
 use super::hash_utils::{sha256, HashResult};
 
-
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Direction {
     Left,
@@ -148,7 +147,6 @@ fn _hash_by_two(hashes: &[HashResult]) -> Vec<HashResult> {
     combined_hashes
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,10 +234,10 @@ mod tests {
         .collect();
 
         let proof = generate_merkle_proof(hashes[4], hashes.clone());
-        
+
         assert_eq!(proof[0].hash, hashes[4]);
         assert_eq!(proof[0].direction, Direction::Left);
-        
+
         assert_eq!(proof[1].hash, hashes[5]);
         assert_eq!(proof[1].direction, Direction::Right);
     }

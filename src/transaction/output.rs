@@ -21,7 +21,7 @@ impl Output {
     }
 
     /// Hashes the contents of the Output struct.
-    /// Ignore extra meta-data. 
+    /// Ignore extra meta-data.
     pub fn hash(&self) -> Vec<u8> {
         let mut result = vec![];
         for b in self.value.to_be_bytes() {

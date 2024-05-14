@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transaction};
+use crate::crypto::hash_utils::Address;
+use crate::types::Satoshi;
 
 use super::database::Database;
 
@@ -73,6 +75,26 @@ impl Database for InMemoryDatabase {
 
     fn is_utxo(&self, tx_hash: &HashResult, output_index: u32) -> bool {
         self.unspent_outputs.contains(&(*tx_hash, output_index))
+    }
+
+    fn get_utxo(&self, public_key: &Address) -> Vec<(HashResult, u32, Satoshi)> {
+        let mut unspent_outputs: Vec<(HashResult, u32, u64)> = vec![];
+        if let Some(tx_hashes) = self.address_to_txs.get(public_key) {
+            for tx_hash in tx_hashes {
+                if let Some(tx) = self.get_transaction(tx_hash) {
+                    for (output_idx, output) in tx.outputs.iter().enumerate() {
+                        if self.is_utxo(tx_hash, output_idx as u32) {
+                            unspent_outputs.push((
+                                tx_hash.clone(),
+                                output_idx as u32,
+                                output.value,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        unspent_outputs
     }
 
     fn add_transaction(&mut self, tx_hash: HashResult, transaction: Transaction) {

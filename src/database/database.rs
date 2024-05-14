@@ -1,4 +1,6 @@
 use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transaction};
+use crate::crypto::hash_utils::Address;
+use crate::types::Satoshi;
 
 pub type DatabaseType = dyn Database + Send + Sync;
 
@@ -29,6 +31,9 @@ pub trait Database {
 
     /// Checks if a transaction output is unspent.
     fn is_utxo(&self, tx_hash: &HashResult, output_index: u32) -> bool;
+
+    /// Retrieves all unspent outputs of a public key.
+    fn get_utxo(&self, public_key: &Address) -> Vec<(HashResult, u32, Satoshi)>;
 
     /// Adds a transaction identified by its hash
     fn add_transaction(&mut self, tx_hash: HashResult, transaction: Transaction);

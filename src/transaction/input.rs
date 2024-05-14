@@ -26,11 +26,6 @@ impl Input {
         for b in self.utxo_output_index.to_be_bytes() {
             result.push(b);
         }
-        // Skip hashing the script, since it contains a signature.
-        // Advance implementation would hash script operations,
-        // except the signature itself.
-        //
-        // TODO: why did I comment this out?
         for b in self.script_sig.hash() {
             result.push(b);
         }

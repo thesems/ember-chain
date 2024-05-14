@@ -128,13 +128,13 @@ impl Transaction {
                 0,
                 Script::new(vec![
                     Item::Operation(Operation::Nop),
-                    Item::Data(get_random_range(0, u64::MAX).to_le_bytes().to_vec()),
+                    Item::Data(get_random_range(0, u64::MAX).to_le_bytes().to_vec(), None),
                 ]),
             )],
             vec![Output::new(
                 reward,
                 Script::new(vec![
-                    Item::Data(pub_key.clone()),
+                    Item::Data(pub_key.clone(), None),
                     Item::Operation(Operation::Dup),
                     Item::Operation(Operation::Equal),
                 ]),
@@ -150,43 +150,86 @@ impl Transaction {
     /// - prev_tx_hash: Transaction hash of the transaction that contains the output to be spent
     /// - prev_tx_output_index: Index of the spendable output of the transaction
     /// - amount: Amount to be spent. Rest will be taken as miner fee.
+    /// - fee:  Amount to be given to the miner.
     /// - account: Receiver's public key used for unlocking the funds.
     ///
-    /// TODO:
-    /// - Currently only a single input can be spent. Multiple inputs should be spendable.
+    /// OPTIMIZE: if miner equals sender, avoid adding additional output.
     ///
-    pub fn create_pay_to_pubkey_hash(
-        prev_tx_hash: HashResult,
-        prev_tx_output_index: u32,
+    pub fn create_pay_to_pub_key_hash(
+        inputs: Vec<(HashResult, u32, u64)>,
         amount: u64,
+        fee: u64,
         account: &Account,
         rx_pub_key: &[u8],
-    ) -> Transaction {
-        let mut tx = Transaction::new(
-            account.public_key().to_vec(),
-            vec![Input::new(
-                prev_tx_hash,
-                prev_tx_output_index,
-                Script::new(vec![]),
-            )],
-            vec![Output::new(
-                amount,
+    ) -> Result<Transaction, String> {
+        let mut total_input_value = 0;
+        let mut tx_inputs = Vec::new();
+
+        for (prev_tx_hash, prev_tx_output_index, value) in &inputs {
+            total_input_value += value;
+            tx_inputs.push(Input::new(
+                *prev_tx_hash,
+                *prev_tx_output_index,
                 Script::new(vec![
-                    Item::Operation(Operation::Dup),
-                    Item::Operation(Operation::Hash256),
-                    Item::Data(rx_pub_key.to_vec()),
-                    Item::Operation(Operation::EqualVerify),
-                    Item::Operation(Operation::CheckSig),
-                ]),
-                rx_pub_key.to_vec(),
-            )],
-        );
+                    Item::Data(vec![], Some("tx_hash".to_string())),
+                    Item::Data(account.public_key().to_vec(), None),
+                ]
+                ),
+            ));
+            if total_input_value >= amount {
+                break;
+            }
+        }
+
+        let total_input_value = total_input_value;
+        if total_input_value < amount + fee {
+            return Err("Insufficient funds for the transaction".to_string());
+        }
+
+        let create_operations = |receiver_pub_key: Vec<u8>| {
+            vec![
+                Item::Operation(Operation::Dup),
+                Item::Operation(Operation::Hash256),
+                Item::Data(receiver_pub_key, None),
+                Item::Operation(Operation::EqualVerify),
+                Item::Operation(Operation::CheckSig),
+            ]
+        };
+
+        let mut tx_outputs = vec![Output::new(
+            amount,
+            Script::new(create_operations(rx_pub_key.to_vec())),
+            rx_pub_key.to_vec(),
+        )];
+
+        let change = total_input_value - amount - fee;
+        if change > 0 {
+            tx_outputs.push(Output::new(
+                change,
+                Script::new(create_operations(account.public_key().to_vec())),
+                account.public_key().to_vec(),
+            ))
+        }
+
+        let mut tx = Transaction::new(account.public_key().to_vec(), tx_inputs, tx_outputs);
         let tx_hash = tx.hash();
-        tx.inputs[0].script_sig = Script::new(vec![
-            Item::Data(account.sign(&tx_hash).to_vec()),
-            Item::Data(account.public_key().to_vec()),
-        ]);
-        tx
+        for input in &mut tx.inputs {
+            let item = input.script_sig.items.iter_mut().find(|item| match item {
+                Item::Data(data, name) => {
+                    if let Some(name) = name {
+                        if name == "tx_hash" {
+                            return true;
+                        }
+                    }
+                    false
+                }
+                _ => false,
+            });
+
+            let mut item = item.expect("Cannot find prepared script item for transaction hash.");
+            *item = Item::Data(account.sign(&tx_hash).to_vec(), None);
+        }
+        Ok(tx)
     }
     pub fn hash(&self) -> HashResult {
         let mut bytes = vec![];

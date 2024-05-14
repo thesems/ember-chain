@@ -47,16 +47,17 @@ impl Miner {
         let coinbase = Transaction::create_coinbase(reward, self.account.public_key().to_vec());
         let coinbase_hash = coinbase.hash();
         let coinbase_amount = coinbase.get_amount(0).unwrap_or(0);
-        let mut txs = vec![
-            coinbase,
-            Transaction::create_pay_to_pubkey_hash(
-                coinbase_hash,
-                0,
-                coinbase_amount,
-                &self.account,
-                self.account.public_key(),
-            ),
-        ];
+
+        let tx_coinbase_spend = Transaction::create_pay_to_pub_key_hash(
+            vec![(coinbase_hash, 0, coinbase_amount)],
+            coinbase_amount,
+            0,
+            &self.account,
+            self.account.public_key(),
+        )
+        .expect("Failed to create spend the coinbase transaction!");
+
+        let mut txs = vec![coinbase, tx_coinbase_spend];
         txs.append(&mut transactions.to_vec());
 
         let tx_hashes = txs.iter().map(|x| x.hash()).collect();

@@ -2,3 +2,4 @@
 .env
 /configs/*.pkcs8
 .vscode
+.idea

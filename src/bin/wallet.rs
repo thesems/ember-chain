@@ -18,9 +18,6 @@ struct Args {
         default_value_t = String::from("./configs/wallet.toml")
     )]
     config_path: String,
-
-    #[arg(short, long, value_name = "start_console | query_balance")]
-    action: String,
 }
 
 fn load_config(config_path: &str) -> WalletConfig {
@@ -30,25 +27,41 @@ fn load_config(config_path: &str) -> WalletConfig {
 }
 
 #[derive(Debug)]
-enum Action {
-    StartConsole,
-    QueryBalance,
+enum ConsoleAction {
+    Invalid,
+    Quit,
+    Help,
+    GetBalance,
     CreateTransaction,
-    ConnectNode,
 }
-impl Action {
-    fn from(action: &str) -> Action {
+impl ConsoleAction {
+    fn from(action: &str) -> ConsoleAction {
         match action {
-            "start_console" => Action::StartConsole,
-            "query_balance" => Action::QueryBalance,
-            "create_transaction" => Action::CreateTransaction,
-            "connect_node" => Action::ConnectNode,
-            _ => panic!("Invalid action {}", action),
+            "get_balance" => ConsoleAction::GetBalance,
+            "create_transaction" => ConsoleAction::CreateTransaction,
+            "help" => ConsoleAction::Help,
+            "quit" => ConsoleAction::Quit,
+            "exit" => ConsoleAction::Quit,
+            _ => ConsoleAction::Invalid,
         }
+    }
+    pub fn into_iter() -> core::array::IntoIter<ConsoleAction, 5> {
+        [
+            ConsoleAction::Invalid,
+            ConsoleAction::Quit,
+            ConsoleAction::Help,
+            ConsoleAction::GetBalance,
+            ConsoleAction::CreateTransaction,
+        ]
+        .into_iter()
     }
 }
 
 fn start_console(wallet: &mut Wallet) {
+    if wallet.connect_node().is_err() {
+        return;
+    }
+
     loop {
         print!("(console) > ");
         stdout().flush().unwrap();
@@ -56,22 +69,21 @@ fn start_console(wallet: &mut Wallet) {
         let mut buff = String::new();
         let _ = io::stdin().read_line(&mut buff);
 
-        let command = buff.trim();
-        match command {
-            "quit" => break,
-            "get_balance" => wallet.query_balance(),
-            _ => log::warn!("Command `{}` not found.", command),
+        let action = ConsoleAction::from(buff.trim());
+
+        match action {
+            ConsoleAction::Quit => break,
+            ConsoleAction::GetBalance => wallet.query_balance(),
+            ConsoleAction::CreateTransaction => {}
+            ConsoleAction::Help => println!(
+                "Actions: {:?}",
+                ConsoleAction::into_iter().collect::<Vec<ConsoleAction>>()
+            ),
+            ConsoleAction::Invalid => log::warn!("Action `{}` not valid.", buff.trim()),
+            _ => log::warn!("Action `{:?}` not implemented.", action),
         }
     }
     log::info!("Exit console.");
-}
-
-fn run_action(wallet: &mut Wallet, action: Action) {
-    match action {
-        Action::StartConsole => start_console(wallet),
-        Action::QueryBalance => wallet.query_balance(),
-        action => panic!("Unimplemented action {:?}", action),
-    };
 }
 
 fn main() {
@@ -82,9 +94,5 @@ fn main() {
     let rt = Runtime::new().unwrap();
     let mut wallet = Wallet::new(&rt, config.clone()).unwrap();
 
-    if wallet.connect_node(&config.rpc_url).is_err() {
-        return;
-    }
-
-    run_action(&mut wallet, Action::from(cli.action.as_str()));
+    start_console(&mut wallet);
 }

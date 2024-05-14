@@ -4,20 +4,11 @@
 pub struct None {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Ack {}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct BlockHeight {
-    #[prost(int32, tag = "1")]
-    pub block_height: i32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Version {
+pub struct HandshakeMessage {
     #[prost(string, tag = "1")]
     pub version: ::prost::alloc::string::String,
-    #[prost(int32, tag = "2")]
-    pub block_height: i32,
+    #[prost(uint32, tag = "2")]
+    pub block_height: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -29,15 +20,55 @@ pub struct Block {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BlockReq {
+    #[prost(uint32, tag = "1")]
+    pub block_height: u32,
+    #[prost(string, optional, tag = "2")]
+    pub block_hash: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Header {
-    #[prost(string, tag = "1")]
-    pub message: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub version: u32,
+    #[prost(string, tag = "2")]
+    pub previous_block_hash: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub merkle_root: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "4")]
+    pub timestamp: u64,
+    #[prost(uint32, tag = "5")]
+    pub difficulty: u32,
+    #[prost(uint32, tag = "6")]
+    pub nonce: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Transaction {
     #[prost(string, tag = "1")]
-    pub message: ::prost::alloc::string::String,
+    pub tx_json: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TransactionReq {
+    #[prost(string, tag = "1")]
+    pub tx_hash: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UnspentOutput {
+    #[prost(bytes = "vec", tag = "1")]
+    pub previous_transaction_hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "2")]
+    pub previous_transaction_output_index: u32,
+    #[prost(uint64, tag = "3")]
+    pub amount: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UnspentOutputs {
+    #[prost(message, repeated, tag = "1")]
+    pub unspent_outputs: ::prost::alloc::vec::Vec<UnspentOutput>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -142,10 +173,14 @@ pub mod node_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
+        /// Exchanges basic information with an another node.
         pub async fn handshake(
             &mut self,
-            request: impl tonic::IntoRequest<super::Version>,
-        ) -> std::result::Result<tonic::Response<super::Version>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::HandshakeMessage>,
+        ) -> std::result::Result<
+            tonic::Response<super::HandshakeMessage>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -163,6 +198,7 @@ pub mod node_client {
             req.extensions_mut().insert(GrpcMethod::new("proto_node.Node", "Handshake"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns the list of currently connected peers.
         pub async fn get_peer_list(
             &mut self,
             request: impl tonic::IntoRequest<super::None>,
@@ -185,10 +221,11 @@ pub mod node_client {
                 .insert(GrpcMethod::new("proto_node.Node", "GetPeerList"));
             self.inner.unary(req, path, codec).await
         }
+        /// Adds the block to the current block list.
         pub async fn add_block(
             &mut self,
             request: impl tonic::IntoRequest<super::Block>,
-        ) -> std::result::Result<tonic::Response<super::Ack>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::None>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -204,9 +241,10 @@ pub mod node_client {
             req.extensions_mut().insert(GrpcMethod::new("proto_node.Node", "AddBlock"));
             self.inner.unary(req, path, codec).await
         }
+        /// Gets the block by its block height or hash. If hash, set block height to 0.
         pub async fn get_block(
             &mut self,
-            request: impl tonic::IntoRequest<super::BlockHeight>,
+            request: impl tonic::IntoRequest<super::BlockReq>,
         ) -> std::result::Result<tonic::Response<super::Block>, tonic::Status> {
             self.inner
                 .ready()
@@ -223,28 +261,7 @@ pub mod node_client {
             req.extensions_mut().insert(GrpcMethod::new("proto_node.Node", "GetBlock"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn add_transaction(
-            &mut self,
-            request: impl tonic::IntoRequest<super::Transaction>,
-        ) -> std::result::Result<tonic::Response<super::Ack>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/proto_node.Node/AddTransaction",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("proto_node.Node", "AddTransaction"));
-            self.inner.unary(req, path, codec).await
-        }
+        /// Gets the unspent balance of the public key.
         pub async fn get_balance(
             &mut self,
             request: impl tonic::IntoRequest<super::PublicKey>,
@@ -267,6 +284,72 @@ pub mod node_client {
                 .insert(GrpcMethod::new("proto_node.Node", "GetBalance"));
             self.inner.unary(req, path, codec).await
         }
+        /// Adds a transaction to the pending transactions.
+        pub async fn add_transaction(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Transaction>,
+        ) -> std::result::Result<tonic::Response<super::None>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/proto_node.Node/AddTransaction",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("proto_node.Node", "AddTransaction"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Gets a transaction whether it is commited or pending.
+        pub async fn get_transaction(
+            &mut self,
+            request: impl tonic::IntoRequest<super::TransactionReq>,
+        ) -> std::result::Result<tonic::Response<super::Transaction>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/proto_node.Node/GetTransaction",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("proto_node.Node", "GetTransaction"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Gets a newly created transaction. Transaction is not added to the mem-pool it is missing a signature.
+        pub async fn get_utxo(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PublicKey>,
+        ) -> std::result::Result<tonic::Response<super::UnspentOutputs>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/proto_node.Node/GetUTXO");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("proto_node.Node", "GetUTXO"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -276,30 +359,49 @@ pub mod node_server {
     /// Generated trait containing gRPC methods that should be implemented for use with NodeServer.
     #[async_trait]
     pub trait Node: Send + Sync + 'static {
+        /// Exchanges basic information with an another node.
         async fn handshake(
             &self,
-            request: tonic::Request<super::Version>,
-        ) -> std::result::Result<tonic::Response<super::Version>, tonic::Status>;
+            request: tonic::Request<super::HandshakeMessage>,
+        ) -> std::result::Result<
+            tonic::Response<super::HandshakeMessage>,
+            tonic::Status,
+        >;
+        /// Returns the list of currently connected peers.
         async fn get_peer_list(
             &self,
             request: tonic::Request<super::None>,
         ) -> std::result::Result<tonic::Response<super::PeerList>, tonic::Status>;
+        /// Adds the block to the current block list.
         async fn add_block(
             &self,
             request: tonic::Request<super::Block>,
-        ) -> std::result::Result<tonic::Response<super::Ack>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::None>, tonic::Status>;
+        /// Gets the block by its block height or hash. If hash, set block height to 0.
         async fn get_block(
             &self,
-            request: tonic::Request<super::BlockHeight>,
+            request: tonic::Request<super::BlockReq>,
         ) -> std::result::Result<tonic::Response<super::Block>, tonic::Status>;
-        async fn add_transaction(
-            &self,
-            request: tonic::Request<super::Transaction>,
-        ) -> std::result::Result<tonic::Response<super::Ack>, tonic::Status>;
+        /// Gets the unspent balance of the public key.
         async fn get_balance(
             &self,
             request: tonic::Request<super::PublicKey>,
         ) -> std::result::Result<tonic::Response<super::Balance>, tonic::Status>;
+        /// Adds a transaction to the pending transactions.
+        async fn add_transaction(
+            &self,
+            request: tonic::Request<super::Transaction>,
+        ) -> std::result::Result<tonic::Response<super::None>, tonic::Status>;
+        /// Gets a transaction whether it is commited or pending.
+        async fn get_transaction(
+            &self,
+            request: tonic::Request<super::TransactionReq>,
+        ) -> std::result::Result<tonic::Response<super::Transaction>, tonic::Status>;
+        /// Gets a newly created transaction. Transaction is not added to the mem-pool it is missing a signature.
+        async fn get_utxo(
+            &self,
+            request: tonic::Request<super::PublicKey>,
+        ) -> std::result::Result<tonic::Response<super::UnspentOutputs>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct NodeServer<T: Node> {
@@ -383,16 +485,16 @@ pub mod node_server {
                 "/proto_node.Node/Handshake" => {
                     #[allow(non_camel_case_types)]
                     struct HandshakeSvc<T: Node>(pub Arc<T>);
-                    impl<T: Node> tonic::server::UnaryService<super::Version>
+                    impl<T: Node> tonic::server::UnaryService<super::HandshakeMessage>
                     for HandshakeSvc<T> {
-                        type Response = super::Version;
+                        type Response = super::HandshakeMessage;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Version>,
+                            request: tonic::Request<super::HandshakeMessage>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -473,7 +575,7 @@ pub mod node_server {
                     struct AddBlockSvc<T: Node>(pub Arc<T>);
                     impl<T: Node> tonic::server::UnaryService<super::Block>
                     for AddBlockSvc<T> {
-                        type Response = super::Ack;
+                        type Response = super::None;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -515,7 +617,7 @@ pub mod node_server {
                 "/proto_node.Node/GetBlock" => {
                     #[allow(non_camel_case_types)]
                     struct GetBlockSvc<T: Node>(pub Arc<T>);
-                    impl<T: Node> tonic::server::UnaryService<super::BlockHeight>
+                    impl<T: Node> tonic::server::UnaryService<super::BlockReq>
                     for GetBlockSvc<T> {
                         type Response = super::Block;
                         type Future = BoxFuture<
@@ -524,7 +626,7 @@ pub mod node_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::BlockHeight>,
+                            request: tonic::Request<super::BlockReq>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -541,50 +643,6 @@ pub mod node_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetBlockSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/proto_node.Node/AddTransaction" => {
-                    #[allow(non_camel_case_types)]
-                    struct AddTransactionSvc<T: Node>(pub Arc<T>);
-                    impl<T: Node> tonic::server::UnaryService<super::Transaction>
-                    for AddTransactionSvc<T> {
-                        type Response = super::Ack;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::Transaction>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Node>::add_transaction(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = AddTransactionSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -629,6 +687,138 @@ pub mod node_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetBalanceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/proto_node.Node/AddTransaction" => {
+                    #[allow(non_camel_case_types)]
+                    struct AddTransactionSvc<T: Node>(pub Arc<T>);
+                    impl<T: Node> tonic::server::UnaryService<super::Transaction>
+                    for AddTransactionSvc<T> {
+                        type Response = super::None;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Transaction>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Node>::add_transaction(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = AddTransactionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/proto_node.Node/GetTransaction" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetTransactionSvc<T: Node>(pub Arc<T>);
+                    impl<T: Node> tonic::server::UnaryService<super::TransactionReq>
+                    for GetTransactionSvc<T> {
+                        type Response = super::Transaction;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::TransactionReq>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Node>::get_transaction(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetTransactionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/proto_node.Node/GetUTXO" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetUTXOSvc<T: Node>(pub Arc<T>);
+                    impl<T: Node> tonic::server::UnaryService<super::PublicKey>
+                    for GetUTXOSvc<T> {
+                        type Response = super::UnspentOutputs;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PublicKey>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Node>::get_utxo(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetUTXOSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
