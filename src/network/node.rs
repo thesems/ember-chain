@@ -109,12 +109,12 @@ impl Node for Network {
         &self,
         request: Request<Transaction>,
     ) -> Result<Response<None>, Status> {
-        let inputs: Vec<Input> = vec![];
-        let outputs: Vec<Output> = vec![];
-        // self.database.lock().unwrap().add_pending_transaction(
-        //     crate::transaction::Transaction::new(request.get_ref().sender.clone(), inputs, outputs),
-        // );
-        Ok(Response::new(None {}))
+        if let Ok(tx) = serde_json::from_str::<crate::transaction::Transaction>(
+            request.get_ref().tx_json.as_str()) {
+            self.database.lock().unwrap().add_pending_transaction(tx);
+            return Ok(Response::new(None {}));
+        }
+        Err(Status::invalid_argument("Failed to decode transaction."))
     }
 
     async fn get_transaction(

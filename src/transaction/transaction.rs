@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     crypto::{
         account::Account,
-        hash_utils::{sha256, HashResult},
+        hash_utils::{HashResult, sha256},
     },
     database::database::DatabaseType,
     mining::pow_utils::get_random_range,
@@ -173,8 +173,7 @@ impl Transaction {
                 Script::new(vec![
                     Item::Data(vec![], Some("tx_hash".to_string())),
                     Item::Data(account.public_key().to_vec(), None),
-                ]
-                ),
+                ]),
             ));
             if total_input_value >= amount {
                 break;
@@ -226,7 +225,7 @@ impl Transaction {
                 _ => false,
             });
 
-            let mut item = item.expect("Cannot find prepared script item for transaction hash.");
+            let item = item.expect("Cannot find prepared script item for transaction hash.");
             *item = Item::Data(account.sign(&tx_hash).to_vec(), None);
         }
         Ok(tx)

@@ -1,10 +1,11 @@
 use std::fs;
+use std::ops::Add;
 
-use ring::signature::{Ed25519KeyPair, KeyPair};
 use ring::{
     rand,
     signature::{self},
 };
+use ring::signature::{ED25519_PUBLIC_KEY_LEN, Ed25519KeyPair, KeyPair};
 
 use crate::config::models::AccountConfig;
 
@@ -88,6 +89,27 @@ impl Account {
     /// Public key of the generated key pair.
     pub fn public_key(&self) -> &[u8] {
         self.key_pair.public_key().as_ref()
+    }
+
+    pub fn public_key_as_hex(&self) -> String {
+        hex::encode(self.public_key())
+    }
+
+    pub fn public_key_from_hex(&self, hex: &str) -> Option<Vec<u8>> {
+        let rx_address = hex::decode(hex.as_bytes().to_vec());
+        if rx_address.is_err() {
+            log::debug!("usage: address must be in a valid hex form");
+            return None;
+        }
+        let rx_address = rx_address.unwrap();
+        if rx_address.len() != ED25519_PUBLIC_KEY_LEN {
+            log::debug!(
+                "usage: address must have a length of {}",
+                ED25519_PUBLIC_KEY_LEN
+            );
+            return None;
+        }
+        Some(rx_address)
     }
 }
 
