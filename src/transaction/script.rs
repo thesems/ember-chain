@@ -40,7 +40,14 @@ impl Script {
         let mut result = vec![];
         for item in self.items.iter() {
             match item {
-                Item::Data(data, _) => data.iter().for_each(|x| result.push(*x)),
+                Item::Data(data, name) => data.iter().for_each(|x| {
+                    if let Some(name) = name {
+                        if name == "sig" {
+                            return;
+                        }
+                    }
+                    result.push(*x)
+                }),
                 Item::Operation(op) => result.push(*op as u8),
             }
         }
@@ -156,8 +163,14 @@ impl ScriptRunner {
     /// Checks if the signature is created by signing the hashed transaction
     /// data using the public key.
     fn check_signature(&mut self) -> bool {
-        if let (Some(sig), Some(pubkey)) = (self.pop_stack(), self.pop_stack()) {
-            verify(&sig, &pubkey, &self.hashed_tx_data).is_ok()
+        if let (Some(pubkey), Some(sig)) = (self.pop_stack(), self.pop_stack()) {
+            match verify(&self.hashed_tx_data, &pubkey, &sig) {
+                Ok(_) => true,
+                Err(err) => {
+                    log::warn!("Signature verification failed: {:?}", err);
+                    false
+                }
+            }
         } else {
             log::warn!("Script operation CheckSig failed. Reason: stack items missing.");
             false

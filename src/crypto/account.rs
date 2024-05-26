@@ -1,11 +1,10 @@
 use std::fs;
-use std::ops::Add;
 
+use ring::signature::{Ed25519KeyPair, KeyPair, ED25519_PUBLIC_KEY_LEN};
 use ring::{
     rand,
     signature::{self},
 };
-use ring::signature::{ED25519_PUBLIC_KEY_LEN, Ed25519KeyPair, KeyPair};
 
 use crate::config::models::AccountConfig;
 

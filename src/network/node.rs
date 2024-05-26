@@ -1,19 +1,17 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use tonic::{Request, Response, Status, transport::Server};
 use tonic::transport::Channel;
+use tonic::{transport::Server, Request, Response, Status};
 
 use crate::crypto::hash_utils::Address;
 use crate::database::database::DatabaseType;
+use crate::proto::proto_node::node_client::NodeClient;
+use crate::proto::proto_node::node_server::{Node, NodeServer};
 use crate::proto::proto_node::{
     Balance, Block, BlockReq, HandshakeMessage, None, PeerList, PublicKey, Transaction,
     TransactionReq, UnspentOutput, UnspentOutputs,
 };
-use crate::proto::proto_node::node_client::NodeClient;
-use crate::proto::proto_node::node_server::{Node, NodeServer};
-use crate::transaction::input::Input;
-use crate::transaction::output::Output;
 
 struct Network {
     peers: Arc<Mutex<HashMap<String, NodeClient<Channel>>>>,
@@ -99,10 +97,10 @@ impl Node for Network {
         todo!()
     }
 
-    async fn get_balance(&self, request: Request<PublicKey>) -> Result<Response<Balance>, Status> {
-        let address = &request.get_ref().key;
-        let balance = self.database.lock().unwrap().get_balance(address);
-        Ok(Response::new(Balance { balance }))
+    async fn get_balance(&self, _request: Request<PublicKey>) -> Result<Response<Balance>, Status> {
+        // let address = &request.get_ref().key;
+        // let balance = self.database.lock().unwrap().get_balance(address);
+        Ok(Response::new(Balance { balance: 42 }))
     }
 
     async fn add_transaction(
@@ -110,7 +108,9 @@ impl Node for Network {
         request: Request<Transaction>,
     ) -> Result<Response<None>, Status> {
         if let Ok(tx) = serde_json::from_str::<crate::transaction::Transaction>(
-            request.get_ref().tx_json.as_str()) {
+            request.get_ref().tx_json.as_str(),
+        ) {
+            log::debug!("tx_hash={:?}", hex::encode(tx.hash()));
             self.database.lock().unwrap().add_pending_transaction(tx);
             return Ok(Response::new(None {}));
         }

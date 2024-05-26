@@ -38,16 +38,17 @@ impl Miner {
     pub fn mine(
         &self,
         database: &Arc<Mutex<DatabaseType>>,
-        transactions: &[Transaction],
         cancel_mine_rx: Receiver<()>,
         prev_block_hash: HashResult,
         reward: Satoshi,
         fake_mining: bool,
     ) -> (Option<Block>, u32) {
+        let pending_txs = database.lock().unwrap().get_pending_transactions().to_vec();
+        database.lock().unwrap().clear_pending_transactions();
+
         let coinbase = Transaction::create_coinbase(reward, self.account.public_key().to_vec());
         let coinbase_hash = coinbase.hash();
         let coinbase_amount = coinbase.get_amount(0).unwrap_or(0);
-
         let tx_coinbase_spend = Transaction::create_pay_to_pub_key_hash(
             vec![(coinbase_hash, 0, coinbase_amount)],
             coinbase_amount,
@@ -58,7 +59,7 @@ impl Miner {
         .expect("Failed to create spend the coinbase transaction!");
 
         let mut txs = vec![coinbase, tx_coinbase_spend];
-        txs.append(&mut transactions.to_vec());
+        txs.append(&mut pending_txs.to_vec());
 
         let tx_hashes = txs.iter().map(|x| x.hash()).collect();
         let merkle_root = generate_merkle_root(tx_hashes);
@@ -79,19 +80,6 @@ impl Miner {
             &mut hash_count,
             fake_mining,
         ) {
-            {
-                let mut db = database.lock().unwrap();
-                for tx in txs.iter() {
-                    let tx_hash = tx.hash();
-                    db.add_transaction(tx_hash, tx.clone());
-                    tx.update_utxos(&mut db);
-                    db.map_address_to_transaction_hash(&tx.sender, tx_hash);
-                    for output in tx.outputs.iter() {
-                        db.map_address_to_transaction_hash(&output.receiver, tx_hash);
-                    }
-                }
-            }
-
             let block = Block::new(block_header, txs, block_hash);
             return (Some(block), hash_count);
         }

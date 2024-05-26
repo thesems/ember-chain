@@ -27,7 +27,9 @@ impl Block {
         database: &Arc<Mutex<DatabaseType>>,
     ) -> bool {
         for tx in self.transactions.iter() {
-            if !tx.verify(current_block_reward, database) || !tx.verify_inputs(database) {
+            if !tx.verify(current_block_reward, database, &self.transactions)
+                || !tx.verify_inputs(database)
+            {
                 return false;
             }
         }

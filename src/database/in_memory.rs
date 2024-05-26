@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transaction};
 use crate::crypto::hash_utils::Address;
 use crate::types::Satoshi;
+use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transaction};
 
 use super::database::Database;
 
@@ -37,7 +37,24 @@ impl Database for InMemoryDatabase {
         let block_height = self.block_height();
 
         for tx in block.transactions.iter() {
-            self.add_transaction(tx.hash(), tx.clone());
+            let tx_hash = tx.hash();
+            self.add_transaction(tx_hash, tx.clone());
+
+            // remove spent utxo's
+            for input in tx.inputs.iter().filter(|x| x.utxo_tx_hash != [0u8; 32]) {
+                self.remove_utxo(&input.utxo_tx_hash, input.utxo_output_index);
+            }
+
+            // add new unspent outputs
+            for output_index in 0..tx.outputs.len() {
+                self.add_utxo(tx_hash, output_index as u32);
+            }
+
+            // update transaction mappings
+            self.map_address_to_transaction_hash(&tx.sender, tx_hash);
+            for output in tx.outputs.iter() {
+                self.map_address_to_transaction_hash(&output.receiver, tx_hash);
+            }
         }
 
         if block_height == 0 {
@@ -70,7 +87,9 @@ impl Database for InMemoryDatabase {
     }
 
     fn remove_utxo(&mut self, tx_hash: &HashResult, output_index: u32) {
-        self.unspent_outputs.remove(&(*tx_hash, output_index));
+        if !self.unspent_outputs.remove(&(*tx_hash, output_index)) {
+            log::warn!("Could not remove a UTXO!");
+        }
     }
 
     fn is_utxo(&self, tx_hash: &HashResult, output_index: u32) -> bool {
@@ -79,25 +98,33 @@ impl Database for InMemoryDatabase {
 
     fn get_utxo(&self, public_key: &Address) -> Vec<(HashResult, u32, Satoshi)> {
         let mut unspent_outputs: Vec<(HashResult, u32, u64)> = vec![];
+        let mut cnt = 0;
         if let Some(tx_hashes) = self.address_to_txs.get(public_key) {
             for tx_hash in tx_hashes {
                 if let Some(tx) = self.get_transaction(tx_hash) {
                     for (output_idx, output) in tx.outputs.iter().enumerate() {
-                        if self.is_utxo(tx_hash, output_idx as u32) {
+                        if &output.receiver == public_key
+                            && self.is_utxo(tx_hash, output_idx as u32)
+                        {
                             unspent_outputs.push((
                                 tx_hash.clone(),
                                 output_idx as u32,
                                 output.value,
                             ));
+                            cnt += 1;
                         }
                     }
                 }
             }
-        }
+        };
         unspent_outputs
     }
 
     fn add_transaction(&mut self, tx_hash: HashResult, transaction: Transaction) {
+        log::debug!(
+            "Added a transaction: {}",
+            hex::encode(transaction.hash()).get(..6).unwrap()
+        );
         self.transactions.insert(tx_hash, transaction);
     }
 
@@ -121,13 +148,18 @@ impl Database for InMemoryDatabase {
 
     fn get_transaction_hashes(&self, address: &[u8]) -> Vec<HashResult> {
         if let Some(txs) = self.address_to_txs.get(address) {
-            txs.into_iter().cloned().collect()
+            txs.iter().cloned().collect()
         } else {
             vec![]
         }
     }
 
     fn add_pending_transaction(&mut self, transaction: Transaction) {
+        log::debug!(
+            "Added a pending transaction {} from {}.",
+            hex::encode(transaction.hash()),
+            hex::encode(&transaction.sender),
+        );
         self.pending_transactions.push(transaction);
     }
 
@@ -137,22 +169,6 @@ impl Database for InMemoryDatabase {
 
     fn clear_pending_transactions(&mut self) {
         self.pending_transactions.clear();
-    }
-
-    fn get_balance(&self, address: &[u8]) -> u64 {
-        let hashes = self.get_transaction_hashes(address);
-
-        let mut balance = 0;
-        for hash in hashes.iter() {
-            if let Some(tx) = self.get_transaction(hash) {
-                for (idx, output) in tx.outputs.iter().enumerate() {
-                    if output.receiver == address && self.is_utxo(hash, idx as u32) {
-                        balance += output.value;
-                    }
-                }
-            }
-        }
-        balance
     }
 }
 

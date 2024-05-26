@@ -1,16 +1,11 @@
-use tokio::io::AsyncWrite;
 use tokio::runtime::Runtime;
 use tonic::transport::Channel;
 
 use crate::config::models::WalletConfig;
 use crate::crypto::account::Account;
-use crate::crypto::hash_utils::{Address, hash_from_vec_u8, HashResult};
-use crate::proto::proto_node::{
-    PublicKey, Transaction, TransactionReq, UnspentOutput, UnspentOutputs,
-};
+use crate::crypto::hash_utils::{hash_from_vec_u8, Address, HashResult};
 use crate::proto::proto_node::node_client::NodeClient;
-use crate::transaction::input::Input;
-use crate::transaction::script::{Item, Script};
+use crate::proto::proto_node::{PublicKey, Transaction, UnspentOutputs};
 
 #[derive(Debug)]
 pub enum WalletError {
@@ -88,7 +83,7 @@ impl<'a> Wallet<'a> {
 
     pub fn create_transaction(
         &mut self,
-        receiver: &Address,
+        rx_pub_key: &Address,
         amount: u64,
         fee: u64,
     ) -> Result<HashResult, String> {
@@ -110,8 +105,9 @@ impl<'a> Wallet<'a> {
             amount,
             fee,
             &self.account,
-            receiver,
+            rx_pub_key,
         ) {
+            log::debug!("Send-Transaction={:?}", hex::encode(tx.hash()));
             if let Ok(encoded_tx) = serde_json::to_string(&tx) {
                 self.rt
                     .block_on(self.client.as_mut().unwrap().add_transaction(Transaction {
@@ -122,6 +118,6 @@ impl<'a> Wallet<'a> {
             }
             return Err("Failed to encode transaction.".to_string());
         }
-        return Err("Failed to create transaction.".to_string());
+        Err("Failed to create transaction.".to_string())
     }
 }

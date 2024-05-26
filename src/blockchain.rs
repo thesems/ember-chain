@@ -1,3 +1,12 @@
+use std::{
+    sync::{Arc, Mutex},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+
+use crossbeam::channel::{select, unbounded, Receiver};
+use tokio::runtime::Runtime;
+
 use crate::{
     api::server::Server,
     block::{block_header::BlockHeader, Block},
@@ -12,13 +21,6 @@ use crate::{
     transaction::Transaction,
     types::Satoshi,
 };
-use crossbeam::channel::{select, unbounded, Receiver};
-use std::{
-    sync::{Arc, Mutex},
-    thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-};
-use tokio::runtime::Runtime;
 
 pub struct Blockchain {
     // dependencies
@@ -101,7 +103,7 @@ impl Blockchain {
                 let block = self.get_next_block();
 
                 if !block.verify(self.current_block_reward, &self.database) {
-                    log::warn!("☠☠ Invalid block ☠☠ {:?}.", block.hash);
+                    log::warn!("☠☠ Invalid block ☠☠.");
                     let mut db = self.database.lock().unwrap();
                     for tx in block.transactions.iter() {
                         db.remove_transaction(tx.hash());
@@ -133,24 +135,12 @@ impl Blockchain {
 
         let header = BlockHeader::from(merkle_root, [0u8; 32], 0, time.as_secs());
         let block_hash = header.finalize();
-
-        let mut db = self.database.lock().unwrap();
-        for tx in txs.iter() {
-            let tx_hash = tx.hash();
-            db.add_transaction(tx_hash, tx.clone());
-            tx.update_utxos(&mut db);
-            db.map_address_to_transaction_hash(&tx.sender, tx_hash);
-            for output in tx.outputs.iter() {
-                db.map_address_to_transaction_hash(&output.receiver, tx_hash);
-            }
-        }
-
         let block = Block {
             header,
             transactions: txs,
             hash: block_hash,
         };
-        db.insert_block(block);
+        self.database.lock().unwrap().insert_block(block);
     }
     fn recv_block(&self, net_cancel_recv: Receiver<()>) -> Block {
         let mut sleep_time = 0;
@@ -185,13 +175,6 @@ impl Blockchain {
     }
     fn get_next_block(&mut self) -> Block {
         let start = Instant::now();
-        let txs = self
-            .database
-            .lock()
-            .unwrap()
-            .get_pending_transactions()
-            .to_vec();
-
         let prev_block_hash = match self.database.lock().unwrap().head() {
             Some(block) => block.hash,
             None => [0u8; 32],
@@ -210,7 +193,6 @@ impl Blockchain {
                 let block: Option<Block>;
                 (block, hash_count) = self.miner.mine(
                     &self.database,
-                    &txs,
                     mining_cancel_rx,
                     prev_block_hash,
                     self.current_block_reward,

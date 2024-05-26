@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     crypto::{
         account::Account,
-        hash_utils::{HashResult, sha256},
+        hash_utils::{sha256, HashResult},
     },
     database::database::DatabaseType,
     mining::pow_utils::get_random_range,
@@ -42,6 +42,7 @@ impl Transaction {
         &self,
         current_block_reward: Satoshi,
         database: &Arc<Mutex<DatabaseType>>,
+        current_block_transactions: &[Transaction],
     ) -> bool {
         let mut total_input = 0;
         let mut total_output = 0;
@@ -56,6 +57,26 @@ impl Transaction {
                     return false;
                 }
 
+                continue;
+            }
+
+            let mut found = false;
+            for tx in current_block_transactions {
+                if tx.hash() == input.utxo_tx_hash
+                    && (input.utxo_output_index as usize) < tx.outputs.len()
+                {
+                    found = true;
+                    if let Some(amount) = tx.get_amount(input.utxo_output_index) {
+                        total_input += amount;
+                    } else {
+                        log::error!(
+                            "Transaction input is referencing an invalid transaction output index."
+                        );
+                        return false;
+                    }
+                }
+            }
+            if found {
                 continue;
             }
 
@@ -93,7 +114,10 @@ impl Transaction {
         true
     }
     pub fn verify_inputs(&self, database: &Arc<Mutex<DatabaseType>>) -> bool {
-        for input in &self.inputs {
+        let tx_hash = self.hash();
+
+        // filter out coinbase input
+        for input in self.inputs.iter().filter(|x| x.utxo_tx_hash != [0u8; 32]) {
             if let Some(prev_tx) = database
                 .lock()
                 .unwrap()
@@ -101,10 +125,11 @@ impl Transaction {
             {
                 if let Some(prev_tx_output) = prev_tx.outputs.get(input.utxo_output_index as usize)
                 {
-                    let mut script_runner = ScriptRunner::new(prev_tx.hash());
+                    let mut script_runner = ScriptRunner::new(tx_hash);
                     let mut items = input.script_sig.items.clone();
                     items.append(&mut prev_tx_output.script_pub_key.items.clone());
                     if !script_runner.execute_script(items) {
+                        log::debug!("Failed to execute script. Invalid block.");
                         return false;
                     }
                 }
@@ -147,11 +172,11 @@ impl Transaction {
     ///
     /// Parameters
     ///
-    /// - prev_tx_hash: Transaction hash of the transaction that contains the output to be spent
-    /// - prev_tx_output_index: Index of the spendable output of the transaction
+    /// - inputs: prev tx hash, prev output tx index, value
     /// - amount: Amount to be spent. Rest will be taken as miner fee.
     /// - fee:  Amount to be given to the miner.
-    /// - account: Receiver's public key used for unlocking the funds.
+    /// - account: Sender's account used for signing the transaction.
+    /// - rx_pub_key: Receiver's public key used for unlocking the funds.
     ///
     /// OPTIMIZE: if miner equals sender, avoid adding additional output.
     ///
@@ -160,7 +185,7 @@ impl Transaction {
         amount: u64,
         fee: u64,
         account: &Account,
-        rx_pub_key: &[u8],
+        receiver_pub_key: &[u8],
     ) -> Result<Transaction, String> {
         let mut total_input_value = 0;
         let mut tx_inputs = Vec::new();
@@ -171,7 +196,7 @@ impl Transaction {
                 *prev_tx_hash,
                 *prev_tx_output_index,
                 Script::new(vec![
-                    Item::Data(vec![], Some("tx_hash".to_string())),
+                    Item::Data(vec![], Some("sig".to_string())),
                     Item::Data(account.public_key().to_vec(), None),
                 ]),
             ));
@@ -197,36 +222,34 @@ impl Transaction {
 
         let mut tx_outputs = vec![Output::new(
             amount,
-            Script::new(create_operations(rx_pub_key.to_vec())),
-            rx_pub_key.to_vec(),
+            Script::new(create_operations(sha256(receiver_pub_key).to_vec())),
+            receiver_pub_key.to_vec(),
         )];
 
         let change = total_input_value - amount - fee;
         if change > 0 {
             tx_outputs.push(Output::new(
                 change,
-                Script::new(create_operations(account.public_key().to_vec())),
+                Script::new(create_operations(sha256(account.public_key()).to_vec())),
                 account.public_key().to_vec(),
             ))
         }
 
         let mut tx = Transaction::new(account.public_key().to_vec(), tx_inputs, tx_outputs);
         let tx_hash = tx.hash();
+
         for input in &mut tx.inputs {
             let item = input.script_sig.items.iter_mut().find(|item| match item {
-                Item::Data(data, name) => {
-                    if let Some(name) = name {
-                        if name == "tx_hash" {
-                            return true;
-                        }
-                    }
-                    false
-                }
+                Item::Data(_, name) => match name {
+                    Some(name) => name == "sig",
+                    None => false,
+                },
                 _ => false,
             });
 
             let item = item.expect("Cannot find prepared script item for transaction hash.");
-            *item = Item::Data(account.sign(&tx_hash).to_vec(), None);
+            let sig = account.sign(&tx_hash).to_vec();
+            *item = Item::Data(sig, Some("sig".to_string()));
         }
         Ok(tx)
     }

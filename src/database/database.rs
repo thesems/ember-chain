@@ -1,6 +1,6 @@
-use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transaction};
 use crate::crypto::hash_utils::Address;
 use crate::types::Satoshi;
+use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transaction};
 
 pub type DatabaseType = dyn Database + Send + Sync;
 
@@ -55,7 +55,4 @@ pub trait Database {
     fn get_pending_transactions(&self) -> &[Transaction];
 
     fn clear_pending_transactions(&mut self);
-
-    /// Returns the balance associated with the publikc key address
-    fn get_balance(&self, address: &[u8]) -> u64;
 }

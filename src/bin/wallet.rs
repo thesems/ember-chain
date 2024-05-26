@@ -108,8 +108,8 @@ fn start_console(wallet: &mut Wallet) {
 
                 match wallet.create_transaction(&rx_address, amount, 0) {
                     Ok(tx_hash) => {
-                        log::info!("You sent {} satoshis to {:?}", amount, &rx_address);
-                        log::debug!("Transaction hash: {:?}", &tx_hash);
+                        log::info!("You sent {} satoshis to {:?}", amount, hex::encode(rx_address));
+                        log::debug!("Transaction hash: {:?}", hex::encode(tx_hash));
                     }
                     Err(err) => {
                         log::error!("Failed to create transaction: {}", err);
