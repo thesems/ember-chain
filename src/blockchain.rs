@@ -17,7 +17,7 @@ use crate::{
     },
     database::{database::DatabaseType, InMemoryDatabase},
     mining::miner::Miner,
-    network::node::start_network_node,
+    network::node::Network,
     transaction::Transaction,
     types::Satoshi,
 };
@@ -65,7 +65,7 @@ impl Blockchain {
     pub fn run(&mut self) {
         let server = self.server.clone();
         let server_handle = thread::spawn(move || {
-            server.listen();
+            // server.listen();
         });
 
         let tx_recv = self.transactions_rx.clone();
@@ -89,10 +89,12 @@ impl Blockchain {
             });
             let db = self.database.clone();
             let port = self.config.network.port;
+            let seed_list = self.config.network.seed_list.clone();
             s.spawn(move || {
                 let rt = Runtime::new().unwrap();
+                let network = Network::new(port, seed_list, db);
                 rt.block_on(async {
-                    if start_network_node(port, db).await.is_err() {
+                    if network.start_network_node().await.is_err() {
                         log::warn!("☠☠ network node crashed ☠☠");
                     }
                 })

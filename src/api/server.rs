@@ -24,25 +24,25 @@ pub struct Server {
     // dependecies
     database: Arc<Mutex<DatabaseType>>,
     // other
-    listener: TcpListener,
+    // listener: TcpListener,
     sender_tx: Sender<Transaction>,
 }
 
 impl Server {
     pub fn new(sender_tx: Sender<Transaction>, database: Arc<Mutex<DatabaseType>>) -> Self {
-        let listener = TcpListener::bind("localhost:1559").unwrap();
+        // let listener = TcpListener::bind("localhost:1559").unwrap();
         Server {
             database,
-            listener,
+            // listener,
             sender_tx,
         }
     }
     pub fn listen(&self) {
         log::info!("HTTP server started on port 1559.");
-        for stream in self.listener.incoming() {
-            let stream = stream.unwrap();
-            self.handle_connection(stream);
-        }
+        // for stream in self.listener.incoming() {
+        //     let stream = stream.unwrap();
+        //     self.handle_connection(stream);
+        // }
     }
 
     fn handle_connection(&self, mut stream: TcpStream) {

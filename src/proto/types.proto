@@ -15,9 +15,6 @@ service Node {
   // Gets the block by its block height or hash. If hash, set block height to 0.
   rpc GetBlock(BlockReq) returns (Block);
 
-  // Gets the unspent balance of the public key.
-  rpc GetBalance(PublicKey) returns (Balance);
-
   // Adds a transaction to the pending transactions.
   rpc AddTransaction(Transaction) returns (None);
 
@@ -33,6 +30,7 @@ message None {}
 message HandshakeMessage {
   string version = 1;
   uint32 block_height = 2;
+  string server_address = 3;
 }
 
 message Block {
@@ -80,6 +78,3 @@ message PublicKey {
   bytes key = 1;
 }
 
-message Balance {
-  uint64 balance = 1;
-}
