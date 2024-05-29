@@ -13,8 +13,8 @@ Due to being a study project, the following features will be implemented in thei
 - [x] Crypto accounts
 - [x] Transactions with inputs, outputs, scripts.
 - [x] Block/transaction verifiers
-- [ ] API for querying data and interaction (in-progress)
-- [ ] CLI-based wallet/tool for interaction (in-progress)
+- [x] API for querying data and interaction
+- [x] CLI-based wallet/tool for interaction
 - [ ] P2P module for exchanging data (in-progress)
 - [ ] Consensus/fork logic
 
