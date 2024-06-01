@@ -8,7 +8,7 @@ use crate::{
 
 use super::BlockHeader;
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub header: BlockHeader,
     pub transactions: Vec<Transaction>,
@@ -23,6 +23,14 @@ impl Block {
         }
     }
     pub fn verify(&self, database: &Arc<Mutex<DatabaseType>>) -> bool {
+        if let Some(block) = database.lock().unwrap().head() {
+            if block.hash != self.header.previous_block_hash {
+                return false;
+            }
+        } else {
+            panic!("No previous block found to verify.")
+        }
+
         for tx in self.transactions.iter() {
             if !tx.verify(self.header.reward, database, &self.transactions)
                 || !tx.verify_inputs(database)

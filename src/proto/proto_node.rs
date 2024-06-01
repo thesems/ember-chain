@@ -21,10 +21,8 @@ pub struct Chain {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Block {
-    #[prost(message, optional, tag = "1")]
-    pub header: ::core::option::Option<Header>,
-    #[prost(message, repeated, tag = "2")]
-    pub transactions: ::prost::alloc::vec::Vec<Transaction>,
+    #[prost(string, tag = "1")]
+    pub block_json: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

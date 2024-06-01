@@ -1,9 +1,10 @@
 use std::{
     sync::{Arc, Mutex},
     thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
+use chrono::DateTime;
 use crossbeam::channel::{select, unbounded, Receiver};
 use tokio::runtime::Runtime;
 
@@ -31,6 +32,14 @@ pub struct Blockchain {
     running: bool,
     transactions_rx: Arc<Mutex<Receiver<Transaction>>>,
     current_block_reward: Satoshi,
+    blocks_announce_tx_rx: (
+        crossbeam::channel::Sender<Block>,
+        crossbeam::channel::Receiver<Block>,
+    ),
+    blocks_publish_tx_rx: (
+        crossbeam::channel::Sender<Block>,
+        crossbeam::channel::Receiver<Block>,
+    ),
 }
 
 #[derive(Debug)]
@@ -56,6 +65,8 @@ impl Blockchain {
             account,
             transactions_rx: Arc::new(Mutex::new(transactions_rx)),
             current_block_reward: config.mining.mining_reward,
+            blocks_announce_tx_rx: unbounded::<Block>(),
+            blocks_publish_tx_rx: unbounded::<Block>(),
             config,
         })
     }
@@ -75,36 +86,52 @@ impl Blockchain {
                         pen_txs.push(tx);
                     }
                     Err(_e) => {
-                        todo!()
+                        thread::sleep(Duration::from_millis(10));
                     }
                 }
             });
             let db = self.database.clone();
             let port = self.config.network.port;
             let seed_list = self.config.network.seed_list.clone();
-            let network = Network::new(port, seed_list, db);
-            let rt = Runtime::new().unwrap();
+            let network = Arc::new(Network::new(
+                port,
+                seed_list,
+                db,
+                self.blocks_announce_tx_rx.0.clone(),
+                self.blocks_publish_tx_rx.1.clone(),
+            ));
 
             self.add_genesis_block();
-            rt.block_on(async {
-                if let Err(err) = network.start_sync().await {
-                    log::error!("Synchronization failed: {}", err);
-                }
-            });
 
             s.spawn(move || {
+                let rt = Runtime::new().unwrap();
                 rt.block_on(async {
-                    if network.start_network_node().await.is_err() {
-                        log::error!("☠☠ network node crashed ☠☠");
+                    let network_cloned = network.clone();
+                    let hdl = tokio::spawn(async move {
+                        if network_cloned.start_network_node().await.is_err() {
+                            log::error!("☠☠ network node crashed ☠☠");
+                        }
+                    });
+                    if let Err(err) = network.start_sync().await {
+                        log::error!("Synchronization failed: {}", err);
                     }
-                })
+
+                    let network_cloned = network.clone();
+                    tokio::spawn(async move { network_cloned.wait_on_publish_block().await });
+
+                    hdl.await.unwrap();
+                    log::warn!("async runtime ended");
+                });
             });
 
             while self.running {
                 let block = self.get_next_block();
 
                 if !block.verify(&self.database) {
-                    log::warn!("☠☠ Invalid block ☠☠.");
+                    log::warn!(
+                        "☠☠ Invalid block ({}) ☠☠.",
+                        hex::encode(block.hash.get(..5).unwrap())
+                    );
                     let mut db = self.database.lock().unwrap();
                     for tx in block.transactions.iter() {
                         db.remove_transaction(tx.hash());
@@ -120,77 +147,24 @@ impl Blockchain {
             }
         });
     }
-    fn add_genesis_block(&mut self) {
-        let time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards.");
-
-        let txs = vec![Transaction::create_coinbase(
-            self.config.mining.mining_reward,
-            self.account.public_key().to_vec(),
-        )];
-        let tx_hashes = txs.iter().map(|x| x.hash()).collect();
+    fn add_genesis_block(&self) {
+        let ts = DateTime::parse_from_rfc3339("2009-01-03T18:15:05-00:00")
+            .unwrap()
+            .timestamp() as u64;
+        let transactions = vec![Transaction::create_coinbase(0, [0u8; 32].to_vec())];
+        let tx_hashes = transactions.iter().map(|x| x.hash()).collect();
         let merkle_root = generate_merkle_root(tx_hashes);
-
-        let header = BlockHeader::from(
-            merkle_root,
-            [0u8; 32],
-            0,
-            time.as_secs(),
-            self.current_block_reward,
-        );
-        let block_hash = header.finalize();
+        let header = BlockHeader::from(merkle_root, [0u8; 32], 0, ts, 0);
         let block = Block {
+            hash: header.finalize(),
             header,
-            transactions: txs,
-            hash: block_hash,
+            transactions,
         };
         self.database.lock().unwrap().insert_block(block);
     }
-    fn recv_block(&self, net_cancel_recv: Receiver<()>) -> Block {
-        let mut sleep_time = 0;
-        loop {
-            match net_cancel_recv.try_recv() {
-                Ok(_) => {
-                    break;
-                }
-                Err(_) => {
-                    sleep_time += 1;
-                    if sleep_time > self.config.mining.block_time_secs {
-                        break;
-                    }
-                    thread::sleep(Duration::from_secs(1));
-                }
-            }
-        }
-
-        let mut previous_block_hash = [0u8; 32];
-        if let Some(previous_block) = self.database.lock().unwrap().head() {
-            previous_block_hash = previous_block.hash;
-        }
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let mut block_header = BlockHeader::from(
-            previous_block_hash,
-            [0u8; 32],
-            0,
-            timestamp,
-            self.current_block_reward,
-        );
-
-        block_header.merkle_root = [0u8; 32];
-        block_header.nonce = 0;
-        Block::new(block_header, vec![], [0u8; 32])
-    }
     fn get_next_block(&mut self) -> Block {
         let start = Instant::now();
-        let prev_block_hash = match self.database.lock().unwrap().head() {
-            Some(block) => block.hash,
-            None => [0u8; 32],
-        };
-        let mut final_block = Block::default();
+        let last_block = self.database.lock().unwrap().head().unwrap().clone();
 
         let (mining_tx, mining_rx) = unbounded::<Block>();
         let (mining_cancel_tx, mining_cancel_rx) = unbounded::<()>();
@@ -198,6 +172,7 @@ impl Blockchain {
         let (net_cancel_tx, net_cancel_rx) = unbounded::<()>();
 
         let mut hash_count = 0;
+        let mut final_block = Block::default();
 
         thread::scope(|s| {
             s.spawn(|| {
@@ -205,30 +180,51 @@ impl Blockchain {
                 (block, hash_count) = self.miner.mine(
                     &self.database,
                     mining_cancel_rx,
-                    prev_block_hash,
+                    last_block.hash,
                     self.current_block_reward,
                     self.config.simulation.fake_mining,
                 );
 
                 if let Some(block) = block {
-                    mining_tx.send(block).unwrap();
+                    mining_tx.send(block.clone()).unwrap();
                 }
             });
-            s.spawn(|| {
-                let block = self.recv_block(net_cancel_rx);
-                net_tx.send(block).unwrap();
+
+            s.spawn(|| loop {
+                select! {
+                    recv(self.blocks_announce_tx_rx.1) -> block => {
+                        let block = block.unwrap();
+                        let last_block = self.database.lock().unwrap().head().unwrap().clone();
+
+                        if block.header.previous_block_hash == last_block.hash {
+                            net_tx.send(block.clone()).unwrap();
+                            return;
+                        } else {
+                            log::warn!("Block ({}) does not fit onto latest block ({}).",
+                                hex::encode(block.header.previous_block_hash.get(..5).unwrap()),
+                                hex::encode(last_block.hash.get(..5).unwrap())
+                            );
+                        }
+                    }
+                    recv(net_cancel_rx) -> _ => {
+                        return;
+                    }
+                }
             });
 
             final_block = select! {
                 recv(mining_rx) -> my_block => {
-                    log::info!("★★★ You successfully mined a block! ★★★");
                     _ = net_cancel_tx.send(());
-                    my_block.unwrap()
+                    let block = my_block.unwrap();
+                    self.blocks_publish_tx_rx.0.send(block.clone()).unwrap();
+                    log::info!("★★★ You successfully mined a block ({})! ★★★", hex::encode(block.hash.get(..5).unwrap()));
+                    block
                 }
                 recv(net_rx) -> other_block => {
-                    log::info!("A participant has mined a block!");
                     _ = mining_cancel_tx.send(());
-                    other_block.unwrap()
+                    let block = other_block.unwrap();
+                    log::info!("A participant has mined a block! ({})!", hex::encode(block.hash.get(..5).unwrap()));
+                    block
                 }
             };
         });

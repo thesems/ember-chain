@@ -37,12 +37,11 @@ message HandshakeMessage {
 }
 
 message Chain {
-    string blocks = 1;
+  string blocks = 1;
 }
 
 message Block {
-  Header header = 1;
-  repeated Transaction transactions = 2;
+  string block_json = 1;
 }
 
 message BlockReq {

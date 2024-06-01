@@ -40,7 +40,8 @@ fn load_config() -> Config {
     config
 }
 
-fn main() {
+fn main() -> color_eyre::eyre::Result<()> {
+    color_eyre::install()?;
     dotenv().ok();
 
     let config = load_config();
@@ -58,4 +59,5 @@ fn main() {
         }
     };
     blockchain.run();
+    Ok(())
 }

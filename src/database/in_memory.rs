@@ -58,10 +58,14 @@ impl Database for InMemoryDatabase {
         }
 
         if block_height == 0 {
-            log::info!("★★★ GENESIS BLOCK ★★★");
+            log::info!(
+                "★★★ GENESIS BLOCK ({}) ★★★",
+                hex::encode(block.hash.get(..5).unwrap())
+            );
         } else {
             log::info!(
-                "Block added at height {} with {} transactions.",
+                "Block ({}) added at height {} with {} transactions.",
+                hex::encode(block.hash.get(..5).unwrap()),
                 block_height,
                 block.transactions.len()
             );

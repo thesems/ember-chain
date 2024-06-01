@@ -5,6 +5,7 @@ use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transacti
 pub type DatabaseType = dyn Database + Send + Sync;
 
 pub trait Database {
+    /// Retrieves the program's version
     fn get_version(&self) -> String;
 
     /// Inserts a block into the database.
@@ -52,9 +53,12 @@ pub trait Database {
     /// Maps a public key address to a transaction hash
     fn get_transaction_hashes(&self, address: &[u8]) -> Vec<HashResult>;
 
+    /// Adds a pending transaction
     fn add_pending_transaction(&mut self, transaction: Transaction);
 
+    /// Retrieves all the pending transactions
     fn get_pending_transactions(&self) -> &[Transaction];
 
+    /// Clears (removes) all the pending transactions
     fn clear_pending_transactions(&mut self);
 }

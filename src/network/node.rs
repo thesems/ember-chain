@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 use tonic::transport::Channel;
 use tonic::{transport::Server, Request, Response, Status};
@@ -20,33 +22,46 @@ pub struct Network {
     blocked_peers: Arc<Vec<String>>,
     seed_list: Vec<String>,
     database: Arc<Mutex<DatabaseType>>,
-    address: String,
+    port: u16,
+    block_announce_tx: crossbeam::channel::Sender<crate::block::Block>,
+    block_publish_rx: crossbeam::channel::Receiver<crate::block::Block>,
 }
 impl Network {
-    pub fn new(port: u16, seed_list: Vec<String>, database: Arc<Mutex<DatabaseType>>) -> Self {
+    pub fn new(
+        port: u16,
+        seed_list: Vec<String>,
+        database: Arc<Mutex<DatabaseType>>,
+        block_announce_tx: crossbeam::channel::Sender<crate::block::Block>,
+        block_publish_rx: crossbeam::channel::Receiver<crate::block::Block>,
+    ) -> Self {
         let peers = Arc::new(Mutex::new(HashMap::new()));
-        let address = format!("[::1]:{}", port);
+        let address = format!("[::]:{}", port);
         let blocked_peers = Arc::new(vec![address.clone()]);
         Network {
-            address,
+            port,
             blocked_peers,
             seed_list,
             peers,
             database,
+            block_announce_tx,
+            block_publish_rx,
         }
     }
 
     pub async fn start_network_node(&self) -> Result<(), Box<dyn std::error::Error>> {
-        log::info!("Node gRPC server started on {}", &self.address);
+        let address = format!("[::]:{}", self.port);
+        log::info!("Node gRPC server started on {}", &address);
         let server = NetworkServer::new(
             self.peers.clone(),
             self.blocked_peers.clone(),
             self.database.clone(),
-            self.address.clone(),
+            self.port,
+            self.block_announce_tx.clone(),
         );
+
         Server::builder()
             .add_service(NodeServer::new(server))
-            .serve(self.address.parse().unwrap())
+            .serve(address.parse().unwrap())
             .await?;
 
         Ok(())
@@ -65,7 +80,11 @@ impl Network {
                 .seed_list
                 .clone()
                 .into_iter()
-                .filter(|p| !self.blocked_peers.contains(&p) && !peers.contains_key(p))
+                .filter(|p| {
+                    !self.blocked_peers.contains(&p)
+                        && !peers.contains_key(p)
+                        && !p.contains(&format!("[::]:{}", self.port))
+                })
                 .collect();
         }
 
@@ -103,10 +122,25 @@ impl Network {
                     );
 
                     for block in blocks {
+                        if self
+                            .database
+                            .lock()
+                            .unwrap()
+                            .get_blocks()
+                            .iter()
+                            .find(|b| b.hash == block.hash)
+                            .is_some()
+                        {
+                            continue;
+                        }
                         if block.verify(&self.database) {
                             self.database.lock().unwrap().insert_block(block);
                         } else {
-                            log::warn!("Block verification failed!");
+                            log::error!(
+                                "Block ({}) verification failed!",
+                                hex::encode(block.hash.get(..5).unwrap())
+                            );
+                            break;
                         }
                     }
                 }
@@ -123,7 +157,7 @@ impl Network {
     ) -> Pin<Box<dyn Future<Output = (Vec<String>, u32)> + Send>> {
         let version = self.database.lock().unwrap().get_version();
         let block_height = self.database.lock().unwrap().block_height() as u32;
-        let server_address = self.address.clone();
+        let server_address = format!("[::1]:{}", self.port);
 
         Box::pin(async move {
             let mut new_peers = vec![];
@@ -156,26 +190,62 @@ impl Network {
             return (new_peers, peer_block_height);
         })
     }
+
+    pub async fn wait_on_publish_block(&self) {
+        loop {
+            match self.block_publish_rx.try_recv() {
+                Ok(block) => {
+                    log::debug!(
+                        "Publish block {:?} to network.",
+                        hex::encode(block.hash.get(..5).unwrap()),
+                    );
+                    self.publish_block(&block).await.unwrap();
+                }
+                Err(_) => {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }
+        }
+    }
+
+    pub async fn publish_block(&self, block: &crate::block::Block) -> Result<(), String> {
+        if let Ok(block_json) = serde_json::to_string(block) {
+            let mut peers = self.peers.lock().unwrap().clone();
+            for (_, client) in peers.iter_mut() {
+                let _ = client
+                    .add_block(Request::new(Block {
+                        block_json: block_json.clone(),
+                    }))
+                    .await;
+            }
+
+            return Ok(());
+        }
+        Err("Failed to serialize block to json.".to_string())
+    }
 }
 
 struct NetworkServer {
     peers: Arc<Mutex<HashMap<String, NodeClient<Channel>>>>,
     blocked_peers: Arc<Vec<String>>,
     database: Arc<Mutex<DatabaseType>>,
-    address: String,
+    port: u16,
+    block_announce_tx: crossbeam::channel::Sender<crate::block::Block>,
 }
 impl NetworkServer {
     fn new(
         peers: Arc<Mutex<HashMap<String, NodeClient<Channel>>>>,
         blocked_peers: Arc<Vec<String>>,
         database: Arc<Mutex<DatabaseType>>,
-        address: String,
+        port: u16,
+        block_announce_tx: crossbeam::channel::Sender<crate::block::Block>,
     ) -> Self {
         NetworkServer {
             peers,
             blocked_peers,
             database,
-            address,
+            port,
+            block_announce_tx,
         }
     }
 }
@@ -209,7 +279,7 @@ impl Node for NetworkServer {
         let reply = HandshakeMessage {
             version: VERSION.to_string(),
             block_height,
-            server_address: self.address.clone(),
+            server_address: format!("[::1]:{}", self.port),
         };
 
         let peer_address = request.get_ref().server_address.to_string();
@@ -257,8 +327,16 @@ impl Node for NetworkServer {
         &self,
         request: Request<Block>,
     ) -> Result<Response<proto_node::None>, Status> {
-        log::debug!("add_block: {:?}", request);
-        todo!()
+        if let Ok(block) =
+            serde_json::from_str::<crate::block::Block>(&request.get_ref().block_json)
+        {
+            log::debug!(
+                "Received a block {} from the network!",
+                hex::encode(block.hash.get(..5).unwrap())
+            );
+            self.block_announce_tx.send(block).unwrap();
+        }
+        Ok(Response::new(proto_node::None {}))
     }
 
     async fn get_block(&self, request: Request<BlockReq>) -> Result<Response<Block>, Status> {

@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{crypto::hash_utils::HashResult, types::Satoshi};
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct BlockHeader {
     pub version: u32,
     pub previous_block_hash: HashResult,
