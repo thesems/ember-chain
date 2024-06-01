@@ -5,6 +5,8 @@ use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transacti
 pub type DatabaseType = dyn Database + Send + Sync;
 
 pub trait Database {
+    fn get_version(&self) -> String;
+
     /// Inserts a block into the database.
     fn insert_block(&mut self, block: Block);
 

@@ -11,8 +11,8 @@ use crate::database::database::DatabaseType;
 use crate::proto::proto_node::node_client::NodeClient;
 use crate::proto::proto_node::node_server::{Node, NodeServer};
 use crate::proto::proto_node::{
-    self, Block, BlockReq, HandshakeMessage, PeerList, PublicKey, Transaction, TransactionReq,
-    UnspentOutput, UnspentOutputs,
+    self, Block, BlockReq, Chain, HandshakeMessage, PeerList, PublicKey, Transaction,
+    TransactionReq, UnspentOutput, UnspentOutputs,
 };
 
 pub struct Network {
@@ -37,36 +37,6 @@ impl Network {
     }
 
     pub async fn start_network_node(&self) -> Result<(), Box<dyn std::error::Error>> {
-        for seed in self.seed_list.iter() {
-            if self.blocked_peers.contains(seed) {
-                continue;
-            }
-            let peers = self.peers.clone();
-            let seed = seed.clone();
-            let server_address = self.address.clone();
-            let blocked_peers = self.blocked_peers.clone();
-
-            tokio::spawn(async move {
-                if let Ok(mut client) = NodeClient::connect(seed.clone()).await {
-                    log::debug!("Connected to seed {}.", seed);
-                    peers.lock().unwrap().insert(seed.clone(), client.clone());
-                    if let Ok(resp) = client
-                        .handshake(Request::new(HandshakeMessage {
-                            version: "0.1.0".to_string(),
-                            block_height: 0,
-                            server_address,
-                        }))
-                        .await
-                    {
-                        log::debug!("Handshake response: {:?}", resp);
-                        Self::explore_peers(peers, blocked_peers, client).await;
-                    }
-                } else {
-                    log::warn!("Failed to connect to seed {}", seed);
-                }
-            });
-        }
-
         log::info!("Node gRPC server started on {}", &self.address);
         let server = NetworkServer::new(
             self.peers.clone(),
@@ -82,32 +52,108 @@ impl Network {
         Ok(())
     }
 
-    /// Recursively tries to reach peers by connecting to them and requesting their peer lists.
-    fn explore_peers(
-        peers: Arc<Mutex<HashMap<String, NodeClient<Channel>>>>,
-        blocked_peers: Arc<Vec<String>>,
-        mut client: NodeClient<Channel>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-        Box::pin(async move {
-            let resp = client.get_peer_list(proto_node::None {}).await;
-            if let Ok(peer_list) = resp {
-                for peer_addr in peer_list.get_ref().peers.iter() {
-                    if blocked_peers.contains(peer_addr) {
-                        log::debug!("Blocked peer: {}", peer_addr);
-                        continue;
-                    }
-                    if peers.lock().unwrap().get(peer_addr).is_none() {
-                        if let Ok(new_client) =
-                            NodeClient::connect(format!("http://{}", peer_addr.clone())).await
-                        {
-                            log::debug!("Connected to peer {}.", peer_addr);
-                            let new_peers = peers.clone();
-                            Network::explore_peers(new_peers, blocked_peers.clone(), new_client)
-                                .await;
+    pub async fn start_sync(&self) -> Result<(), String> {
+        // explore peers
+        let mut longest_chain = ("".to_string(), 0);
+        let peers = self.peers.clone();
+        let blocked_peers = self.blocked_peers.clone();
+
+        let mut neighbours: Vec<String>;
+        {
+            let peers = peers.lock().unwrap();
+            neighbours = self
+                .seed_list
+                .clone()
+                .into_iter()
+                .filter(|p| !self.blocked_peers.contains(&p) && !peers.contains_key(p))
+                .collect();
+        }
+
+        while let Some(next_peer) = neighbours.pop() {
+            let (new_peers, block_height) = self
+                .connect_and_get_info(next_peer.to_string(), peers.clone())
+                .await;
+            if block_height > longest_chain.1 {
+                longest_chain.0 = next_peer;
+                longest_chain.1 = block_height;
+            }
+
+            let peers = peers.lock().unwrap();
+            for new_peer in new_peers {
+                if blocked_peers.contains(&new_peer) || peers.contains_key(&new_peer) {
+                    continue;
+                }
+            }
+        }
+
+        if longest_chain.0 == "" || longest_chain.1 == 0 {
+            return Err("Failed to find a peer for synchronization!".to_string());
+        }
+
+        // select the peer with highest block height and download chain
+        if let Some(client) = self.peers.lock().unwrap().get_mut(&longest_chain.0) {
+            if let Ok(chain_json) = client.get_chain(Request::new(proto_node::None {})).await {
+                if let Ok(blocks) =
+                    serde_json::from_str::<Vec<crate::block::Block>>(&chain_json.get_ref().blocks)
+                {
+                    log::debug!(
+                        "Downloaded {} blocks from peer {}",
+                        blocks.len(),
+                        &longest_chain.0
+                    );
+
+                    for block in blocks {
+                        if block.verify(&self.database) {
+                            self.database.lock().unwrap().insert_block(block);
+                        } else {
+                            log::warn!("Block verification failed!");
                         }
                     }
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    fn connect_and_get_info(
+        &self,
+        peer_addr: String,
+        peers: Arc<Mutex<HashMap<String, NodeClient<Channel>>>>,
+    ) -> Pin<Box<dyn Future<Output = (Vec<String>, u32)> + Send>> {
+        let version = self.database.lock().unwrap().get_version();
+        let block_height = self.database.lock().unwrap().block_height() as u32;
+        let server_address = self.address.clone();
+
+        Box::pin(async move {
+            let mut new_peers = vec![];
+            let mut peer_block_height = 0;
+
+            if let Ok(mut client) = NodeClient::connect(peer_addr.clone()).await {
+                log::debug!("Connected to {}.", peer_addr);
+
+                if let Ok(resp) = client
+                    .handshake(Request::new(HandshakeMessage {
+                        version,
+                        block_height,
+                        server_address,
+                    }))
+                    .await
+                {
+                    peers.lock().unwrap().insert(peer_addr, client.clone());
+                    peer_block_height = resp.get_ref().block_height;
+
+                    if let Ok(peer_list) = client.get_peer_list(proto_node::None {}).await {
+                        for p in peer_list.get_ref().peers.clone() {
+                            new_peers.push(p.to_string());
+                        }
+                    }
+                }
+            } else {
+                log::warn!("Failed to connect to {}.", &peer_addr);
+            }
+
+            return (new_peers, peer_block_height);
         })
     }
 }
@@ -178,11 +224,11 @@ impl Node for NetworkServer {
                     .unwrap()
                     .insert(peer_address, client.clone());
 
-                let peers = self.peers.clone();
-                let blocked_peers = self.blocked_peers.clone();
-                tokio::spawn(
-                    async move { Network::explore_peers(peers, blocked_peers, client).await },
-                );
+                // let peers = self.peers.clone();
+                // let blocked_peers = self.blocked_peers.clone();
+                // tokio::spawn(
+                //     async move { Network::explore_peers(peers, blocked_peers, client).await },
+                // );
             } else {
                 log::warn!("Failed to connect to peer {}.", peer_address);
             }
@@ -218,6 +264,19 @@ impl Node for NetworkServer {
     async fn get_block(&self, request: Request<BlockReq>) -> Result<Response<Block>, Status> {
         log::debug!("get_block: {:?}", request);
         todo!()
+    }
+
+    async fn get_chain(&self, _: Request<proto_node::None>) -> Result<Response<Chain>, Status> {
+        let db = self.database.lock().unwrap();
+        let blocks = db.get_blocks();
+        if let Ok(json) = serde_json::to_string(&blocks) {
+            Ok(Response::new(Chain { blocks: json }))
+        } else {
+            Err(Status::new(
+                tonic::Code::Internal,
+                "Failed to encode blocks to JSON.",
+            ))
+        }
     }
 
     async fn add_transaction(

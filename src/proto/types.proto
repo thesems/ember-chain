@@ -15,6 +15,9 @@ service Node {
   // Gets the block by its block height or hash. If hash, set block height to 0.
   rpc GetBlock(BlockReq) returns (Block);
 
+  // Gets all blocks that constitute a chain.
+  rpc GetChain(None) returns (Chain);
+
   // Adds a transaction to the pending transactions.
   rpc AddTransaction(Transaction) returns (None);
 
@@ -31,6 +34,10 @@ message HandshakeMessage {
   string version = 1;
   uint32 block_height = 2;
   string server_address = 3;
+}
+
+message Chain {
+    string blocks = 1;
 }
 
 message Block {

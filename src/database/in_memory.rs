@@ -98,7 +98,6 @@ impl Database for InMemoryDatabase {
 
     fn get_utxo(&self, public_key: &Address) -> Vec<(HashResult, u32, Satoshi)> {
         let mut unspent_outputs: Vec<(HashResult, u32, u64)> = vec![];
-        let mut cnt = 0;
         if let Some(tx_hashes) = self.address_to_txs.get(public_key) {
             for tx_hash in tx_hashes {
                 if let Some(tx) = self.get_transaction(tx_hash) {
@@ -106,12 +105,7 @@ impl Database for InMemoryDatabase {
                         if &output.receiver == public_key
                             && self.is_utxo(tx_hash, output_idx as u32)
                         {
-                            unspent_outputs.push((
-                                tx_hash.clone(),
-                                output_idx as u32,
-                                output.value,
-                            ));
-                            cnt += 1;
+                            unspent_outputs.push((*tx_hash, output_idx as u32, output.value));
                         }
                     }
                 }
@@ -169,6 +163,10 @@ impl Database for InMemoryDatabase {
 
     fn clear_pending_transactions(&mut self) {
         self.pending_transactions.clear();
+    }
+
+    fn get_version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
     }
 }
 

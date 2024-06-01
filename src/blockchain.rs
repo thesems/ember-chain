@@ -8,7 +8,6 @@ use crossbeam::channel::{select, unbounded, Receiver};
 use tokio::runtime::Runtime;
 
 use crate::{
-    api::server::Server,
     block::{block_header::BlockHeader, Block},
     config::models::Config,
     crypto::{
@@ -25,7 +24,6 @@ use crate::{
 pub struct Blockchain {
     // dependencies
     database: Arc<Mutex<DatabaseType>>,
-    server: Arc<Server>,
     account: Arc<Account>,
     miner: Miner,
     // other
@@ -53,7 +51,6 @@ impl Blockchain {
 
         Ok(Self {
             running: true,
-            server: Arc::new(Server::new(transactions_tx, database.clone())),
             database,
             miner: Miner::new(config.mining.clone(), account.clone()),
             account,
@@ -63,12 +60,7 @@ impl Blockchain {
         })
     }
     pub fn run(&mut self) {
-        let server = self.server.clone();
-        let server_handle = thread::spawn(move || {
-            // server.listen();
-        });
-
-        let tx_recv = self.transactions_rx.clone();
+        let transactions_rx = self.transactions_rx.clone();
         let mut pen_txs = self
             .database
             .lock()
@@ -78,7 +70,7 @@ impl Blockchain {
 
         thread::scope(|s| {
             s.spawn(|| loop {
-                match tx_recv.lock().unwrap().recv() {
+                match transactions_rx.lock().unwrap().recv() {
                     Ok(tx) => {
                         pen_txs.push(tx);
                     }
@@ -90,21 +82,28 @@ impl Blockchain {
             let db = self.database.clone();
             let port = self.config.network.port;
             let seed_list = self.config.network.seed_list.clone();
+            let network = Network::new(port, seed_list, db);
+            let rt = Runtime::new().unwrap();
+
+            self.add_genesis_block();
+            rt.block_on(async {
+                if let Err(err) = network.start_sync().await {
+                    log::error!("Synchronization failed: {}", err);
+                }
+            });
+
             s.spawn(move || {
-                let rt = Runtime::new().unwrap();
-                let network = Network::new(port, seed_list, db);
                 rt.block_on(async {
                     if network.start_network_node().await.is_err() {
-                        log::warn!("☠☠ network node crashed ☠☠");
+                        log::error!("☠☠ network node crashed ☠☠");
                     }
                 })
             });
 
-            self.add_genesis_block();
             while self.running {
                 let block = self.get_next_block();
 
-                if !block.verify(self.current_block_reward, &self.database) {
+                if !block.verify(&self.database) {
                     log::warn!("☠☠ Invalid block ☠☠.");
                     let mut db = self.database.lock().unwrap();
                     for tx in block.transactions.iter() {
@@ -119,8 +118,6 @@ impl Blockchain {
                     self.miner.adjust_difficulty();
                 }
             }
-
-            server_handle.join().unwrap();
         });
     }
     fn add_genesis_block(&mut self) {
@@ -135,7 +132,13 @@ impl Blockchain {
         let tx_hashes = txs.iter().map(|x| x.hash()).collect();
         let merkle_root = generate_merkle_root(tx_hashes);
 
-        let header = BlockHeader::from(merkle_root, [0u8; 32], 0, time.as_secs());
+        let header = BlockHeader::from(
+            merkle_root,
+            [0u8; 32],
+            0,
+            time.as_secs(),
+            self.current_block_reward,
+        );
         let block_hash = header.finalize();
         let block = Block {
             header,
@@ -169,7 +172,13 @@ impl Blockchain {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let mut block_header = BlockHeader::from(previous_block_hash, [0u8; 32], 0, timestamp);
+        let mut block_header = BlockHeader::from(
+            previous_block_hash,
+            [0u8; 32],
+            0,
+            timestamp,
+            self.current_block_reward,
+        );
 
         block_header.merkle_root = [0u8; 32];
         block_header.nonce = 0;

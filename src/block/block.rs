@@ -1,13 +1,14 @@
 use std::sync::{Arc, Mutex};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     crypto::hash_utils::HashResult, database::database::DatabaseType, transaction::Transaction,
-    types::Satoshi,
 };
 
 use super::BlockHeader;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Block {
     pub header: BlockHeader,
     pub transactions: Vec<Transaction>,
@@ -21,13 +22,9 @@ impl Block {
             hash,
         }
     }
-    pub fn verify(
-        &self,
-        current_block_reward: Satoshi,
-        database: &Arc<Mutex<DatabaseType>>,
-    ) -> bool {
+    pub fn verify(&self, database: &Arc<Mutex<DatabaseType>>) -> bool {
         for tx in self.transactions.iter() {
-            if !tx.verify(current_block_reward, database, &self.transactions)
+            if !tx.verify(self.header.reward, database, &self.transactions)
                 || !tx.verify_inputs(database)
             {
                 return false;

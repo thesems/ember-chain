@@ -69,8 +69,13 @@ impl Miner {
             .unwrap()
             .as_secs();
 
-        let mut block_header =
-            BlockHeader::from(merkle_root, prev_block_hash, self.difficulty, timestamp);
+        let mut block_header = BlockHeader::from(
+            merkle_root,
+            prev_block_hash,
+            self.difficulty,
+            timestamp,
+            reward,
+        );
 
         let mut hash_count = 0u32;
         if let Some(block_hash) = proof_of_work(

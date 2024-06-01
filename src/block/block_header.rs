@@ -1,8 +1,9 @@
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::crypto::hash_utils::HashResult;
+use crate::{crypto::hash_utils::HashResult, types::Satoshi};
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct BlockHeader {
     pub version: u32,
     pub previous_block_hash: HashResult,
@@ -10,6 +11,7 @@ pub struct BlockHeader {
     pub timestamp: u64,
     pub difficulty: u8,
     pub nonce: u32,
+    pub reward: Satoshi,
 }
 impl BlockHeader {
     pub fn from(
@@ -17,6 +19,7 @@ impl BlockHeader {
         previous_block_hash: HashResult,
         difficulty: u8,
         timestamp: u64,
+        reward: Satoshi,
     ) -> Self {
         Self {
             version: 0,
@@ -25,6 +28,7 @@ impl BlockHeader {
             difficulty,
             timestamp,
             nonce: 0,
+            reward,
         }
     }
     pub fn finalize(&self) -> HashResult {
@@ -38,6 +42,7 @@ impl BlockHeader {
         data.extend(self.difficulty.to_string().as_bytes());
         data.extend(self.timestamp.to_string().as_bytes());
         data.extend(self.nonce.to_string().as_bytes());
+        data.extend(self.reward.to_string().as_bytes());
         data
     }
     pub fn size(&self) -> usize {
