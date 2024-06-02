@@ -15,6 +15,5 @@ Due to being a study project, the following features will be implemented in thei
 - [x] Block/transaction verifiers
 - [x] API for querying data and interaction
 - [x] CLI-based wallet/tool for interaction
-- [ ] P2P module for exchanging data (in-progress)
-- [ ] Consensus/fork logic
-
+- [x] P2P module for exchanging data (in-progress)
+- [x] Consensus/fork logic

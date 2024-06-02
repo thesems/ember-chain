@@ -101,7 +101,7 @@ impl Blockchain {
                 self.blocks_publish_tx_rx.1.clone(),
             ));
 
-            self.add_genesis_block();
+            self.database.lock().unwrap().create_genesis_block();
 
             s.spawn(move || {
                 let rt = Runtime::new().unwrap();
@@ -146,21 +146,6 @@ impl Blockchain {
                 }
             }
         });
-    }
-    fn add_genesis_block(&self) {
-        let ts = DateTime::parse_from_rfc3339("2009-01-03T18:15:05-00:00")
-            .unwrap()
-            .timestamp() as u64;
-        let transactions = vec![Transaction::create_coinbase(0, [0u8; 32].to_vec())];
-        let tx_hashes = transactions.iter().map(|x| x.hash()).collect();
-        let merkle_root = generate_merkle_root(tx_hashes);
-        let header = BlockHeader::from(merkle_root, [0u8; 32], 0, ts, 0);
-        let block = Block {
-            hash: header.finalize(),
-            header,
-            transactions,
-        };
-        self.database.lock().unwrap().insert_block(block);
     }
     fn get_next_block(&mut self) -> Block {
         let start = Instant::now();

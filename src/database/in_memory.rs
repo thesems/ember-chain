@@ -1,13 +1,19 @@
 use std::collections::{HashMap, HashSet};
 
+use chrono::DateTime;
+
+use crate::block::BlockHeader;
 use crate::crypto::hash_utils::Address;
+use crate::crypto::merkle_tree::generate_merkle_root;
 use crate::types::Satoshi;
 use crate::{block::Block, crypto::hash_utils::HashResult, transaction::Transaction};
 
 use super::database::Database;
 
 pub struct InMemoryDatabase {
-    blocks: Vec<Block>,
+    blocks: HashMap<String, Block>,
+    chains: HashMap<String, Vec<String>>,
+    longest_chain_tip_hash: String,
     pending_transactions: Vec<Transaction>,
     transactions: HashMap<HashResult, Transaction>,
     unspent_outputs: HashSet<(HashResult, u32)>,
@@ -17,7 +23,9 @@ pub struct InMemoryDatabase {
 impl InMemoryDatabase {
     pub fn new() -> Self {
         InMemoryDatabase {
-            blocks: vec![],
+            blocks: HashMap::new(),
+            chains: HashMap::new(),
+            longest_chain_tip_hash: String::new(),
             pending_transactions: Vec::new(),
             transactions: HashMap::new(),
             unspent_outputs: HashSet::new(),
@@ -33,6 +41,29 @@ impl Default for InMemoryDatabase {
 }
 
 impl Database for InMemoryDatabase {
+    fn create_genesis_block(&mut self) {
+        let ts = DateTime::parse_from_rfc3339("2009-01-03T18:15:05-00:00")
+            .unwrap()
+            .timestamp() as u64;
+        let merkle_root = generate_merkle_root(vec![]);
+        let header = BlockHeader::from(merkle_root, [0u8; 32], 0, ts, 0);
+        let block = Block {
+            hash: header.finalize(),
+            header,
+            transactions: vec![],
+        };
+        let block_hash = block.get_hash_as_string(false).clone();
+
+        self.blocks.insert(block_hash.clone(), block.clone());
+        self.chains
+            .insert(block_hash.clone(), vec![block_hash.clone()]);
+        self.longest_chain_tip_hash = block_hash.clone();
+
+        log::info!(
+            "★★★ GENESIS BLOCK ({}) ★★★",
+            hex::encode(block.hash.get(..5).unwrap())
+        );
+    }
     fn insert_block(&mut self, block: Block) {
         let block_height = self.block_height();
 
@@ -57,33 +88,84 @@ impl Database for InMemoryDatabase {
             }
         }
 
-        if block_height == 0 {
-            log::info!(
-                "★★★ GENESIS BLOCK ({}) ★★★",
-                hex::encode(block.hash.get(..5).unwrap())
-            );
-        } else {
-            log::info!(
-                "Block ({}) added at height {} with {} transactions.",
-                hex::encode(block.hash.get(..5).unwrap()),
-                block_height,
-                block.transactions.len()
-            );
-        }
+        log::info!(
+            "Block ({}) added at height {} with {} transactions.",
+            hex::encode(block.hash.get(..5).unwrap()),
+            block_height,
+            block.transactions.len()
+        );
 
-        self.blocks.push(block);
+        let block_hash = block.get_hash_as_string(false);
+        self.blocks.insert(block_hash.clone(), block.clone());
+
+        if let Some(chain) = self
+            .chains
+            .get(&hex::encode(block.header.previous_block_hash))
+        {
+            let mut new_chain = chain.clone();
+            new_chain.push(block_hash.clone());
+
+            let new_chain_height = new_chain.len();
+            self.chains.insert(block_hash.clone(), new_chain);
+
+            if new_chain_height > self.chains.get(&self.longest_chain_tip_hash).unwrap().len() {
+                self.longest_chain_tip_hash = block_hash.clone();
+            }
+        } else {
+            // Orphan blocks
+            self.chains
+                .insert(block_hash.clone(), vec![block_hash.clone()]);
+        }
     }
 
-    fn get_blocks(&self) -> &[Block] {
-        &self.blocks
+    fn get_blocks(&self) -> Vec<&Block> {
+        let mut blocks = vec![];
+        if let Some(block_hashes) = self.chains.get(&self.longest_chain_tip_hash) {
+            for block_hash in block_hashes {
+                blocks.push(self.blocks.get(block_hash).unwrap());
+            }
+        }
+        blocks
+    }
+
+    fn resolve_fork(&mut self) {
+        let mut longest_chain_tip_hash = self.longest_chain_tip_hash.clone();
+        let mut max_length = self.chains.get(&longest_chain_tip_hash).unwrap().len();
+
+        for (tip, chain) in &self.chains {
+            if chain.len() > max_length {
+                longest_chain_tip_hash = tip.clone();
+                max_length = chain.len();
+            }
+        }
+
+        if longest_chain_tip_hash != self.longest_chain_tip_hash {
+            log::warn!(
+                "Fork detected. Changed head to {}.",
+                longest_chain_tip_hash.get(..5).unwrap()
+            )
+        }
+
+        self.longest_chain_tip_hash = longest_chain_tip_hash;
     }
 
     fn block_height(&self) -> usize {
-        self.blocks.len()
+        if let Some(block_hashes) = self.chains.get(&self.longest_chain_tip_hash) {
+            block_hashes.len()
+        } else {
+            0
+        }
     }
 
     fn head(&self) -> Option<&Block> {
-        self.blocks.last()
+        if let Some(block_hashes) = self.chains.get(&self.longest_chain_tip_hash) {
+            if let Some(block) = self.blocks.get(block_hashes.last().unwrap()) {
+                return Some(block);
+            } else {
+                panic!("No block for hash found!")
+            }
+        }
+        None
     }
 
     fn add_utxo(&mut self, tx_hash: HashResult, output_index: u32) {

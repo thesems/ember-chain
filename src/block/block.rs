@@ -40,4 +40,11 @@ impl Block {
         }
         true
     }
+    pub fn get_hash_as_string(&self, clipped: bool) -> String {
+        if clipped {
+            hex::encode(self.hash.get(..5).unwrap())
+        } else {
+            hex::encode(self.hash)
+        }
+    }
 }

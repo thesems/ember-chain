@@ -40,7 +40,7 @@ pub fn proof_of_work(
     let mut block_hash = block_header.finalize();
     let target = target_from_difficulty_bit(difficulty);
     let time_started = Instant::now();
-    let wait_secs = get_random_range(6, 14);
+    let wait_secs = get_random_range(8, 12);
 
     for i in 0..u32::MAX {
         if !fake_mining {

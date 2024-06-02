@@ -8,11 +8,17 @@ pub trait Database {
     /// Retrieves the program's version
     fn get_version(&self) -> String;
 
+    /// Creates and inserts the genesis block.
+    fn create_genesis_block(&mut self);
+
     /// Inserts a block into the database.
     fn insert_block(&mut self, block: Block);
 
-    /// Retrieves the blocks.
-    fn get_blocks(&self) -> &[Block];
+    /// Retrieves the blocks of the longest chain.
+    fn get_blocks(&self) -> Vec<&Block>;
+
+    /// Resolves the fork by determining the longest chain.
+    fn resolve_fork(&mut self);
 
     /// Retrieves the number of blocks.
     fn block_height(&self) -> usize;
